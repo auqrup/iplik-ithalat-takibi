@@ -188,7 +188,7 @@
     </div>
   </div>
 
-  <!-- MODAL 2: DURUM GÜNCELLEME (ZORUNLU ALANLAR) -->
+  <!-- MODAL 2: DURUM GÜNCELLEME -->
   <div id="modalStatus" class="modal" style="display: none;">
     <div class="modal-content">
       <div class="modal-head">
@@ -303,9 +303,7 @@
       console.warn("Firebase başlatma uyarısı:", err);
     }
 
-    // --- 2. LOCAL DATA YÖNETİMİ ---
-    const DEFAULT_COMPANIES = ["DODHIA", "HARMONY", "AYM", "KIRAN"];
-    
+    // --- 2. LOCAL DATA YÖNETİMİ (TAMAMEN DİNAMİK VE KALICI) ---
     function loadData(key, def) {
       try {
         const s = localStorage.getItem(key);
@@ -316,7 +314,7 @@
       try { localStorage.setItem(key, JSON.stringify(val)); } catch(e) {}
     }
 
-    let companies = loadData("app_companies_v1", DEFAULT_COMPANIES);
+    let companies = loadData("app_companies_v1", ["DODHIA", "HARMONY", "AYM"]);
     let proformas = loadData("app_proformas_v1", []);
     let containers = loadData("app_containers_v1", []);
 
@@ -349,7 +347,7 @@
       document.getElementById("modalSuccess").style.display = "flex";
     }
 
-    // --- 4. FİRMA İŞLEMLERİ ---
+    // --- 4. FİRMA İŞLEMLERİ (SİLİNEN ŞİRKET ASLA GERİ GELMEZ) ---
     function addCompany() {
       const inp = document.getElementById("inputCompName");
       const val = inp.value.trim().toUpperCase();
@@ -365,7 +363,7 @@
       renderBoard();
 
       if (companiesCol) {
-        companiesCol.add({ name: val, createdAt: firebase.firestore.FieldValue.serverTimestamp() }).catch(e => console.warn(e));
+        companiesCol.doc(val).set({ name: val, createdAt: firebase.firestore.FieldValue.serverTimestamp() }).catch(e => console.warn(e));
       }
     }
 
@@ -376,13 +374,15 @@
         return;
       }
 
-      if (confirm('"' + name + '" firmasını aktif listeden silmek istediğinize emin misiniz?')) {
+      if (confirm('"' + name + '" firmasını kalıcı olarak silmek istediğinize emin misiniz?')) {
         companies = companies.filter(c => c !== name);
         saveData("app_companies_v1", companies);
         updateCompanyList();
         renderBoard();
 
+        // Firebase'den de kesin olarak sil
         if (companiesCol) {
+          companiesCol.doc(name).delete().catch(e => console.warn(e));
           companiesCol.where("name", "==", name).get().then(snap => {
             snap.forEach(doc => doc.ref.delete());
           }).catch(e => console.warn(e));
@@ -853,18 +853,21 @@
       link.click();
     }
 
-    // --- 8. BAŞLANGIÇ VE CANLI BULUT DİNLEME ---
+    // --- 8. BAŞLANGIÇ VE DİNAMİK CANLI BULUT DİNLEME ---
     updateCompanyList();
     renderBoard();
 
     if (db) {
+      // Buluttaki şirketleri al (silinenleri zorla geri ekleme yapmaz)
       companiesCol.onSnapshot(snap => {
-        const remote = snap.docs.map(d => d.data().name).filter(Boolean);
-        if (remote.length) {
-          companies = Array.from(new Set([...DEFAULT_COMPANIES, ...companies, ...remote]));
-          saveData("app_companies_v1", companies);
-          updateCompanyList();
-          renderBoard();
+        if (!snap.empty) {
+          const remoteNames = snap.docs.map(d => d.data().name).filter(Boolean);
+          if (remoteNames.length) {
+            companies = Array.from(new Set(remoteNames));
+            saveData("app_companies_v1", companies);
+            updateCompanyList();
+            renderBoard();
+          }
         }
         setBadge(true);
       }, err => {
