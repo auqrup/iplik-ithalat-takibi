@@ -38,3 +38,593 @@ body{background:#f1f5f9;padding:15px;color:#1e293b}
 .card-foot{flex-wrap:wrap;padding:6px 8px;background:#f8fafc;border-top:1px solid #e2e8f0;display:flex;justify-content:space-between;align-items:center;gap:5px}
 .sumbox{background:#ecfdf5;border:1px solid #a7f3d0;border-radius:6px;padding:6px 8px;display:flex;justify-content:space-between;font-weight:bold;font-size:11px;color:#065f46}
 .cno{background:#0f172a;color:#fbbf24;padding:2px 4px;border-radius:4px;font-family:monospace}
+.det{background:#f8fafc;padding:5px;border-radius:4px;font-size:11px;white-space:pre-line;border:1px solid #f1f5f9}
+.bg-white{background:#fff;color:#334155;border-bottom:1px solid #cbd5e1}.bg-yellow{background:#f59e0b;color:#451a03}
+.bg-green{background:#059669;color:#fff}.bg-red{background:#e11d48;color:#fff}.bg-blue{background:#2563eb;color:#fff}
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;align-items:center;justify-content:center;padding:15px;z-index:100}
+.modal.open{display:flex}
+.mc{background:#fff;width:100%;max-width:450px;border-radius:10px;padding:15px;max-height:90vh;overflow-y:auto}
+.mh{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;border-bottom:1px solid #e2e8f0;padding-bottom:5px;font-weight:bold}
+.fg{margin-bottom:10px;display:flex;flex-direction:column;gap:4px;font-size:12px}
+.fg input,.fg select,.fg textarea{padding:8px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px;width:100%}
+.row{display:flex;gap:8px}.row>div{flex:1}
+.req{color:#b91c1c}
+.err{color:#e11d48;font-size:11px;font-weight:bold;display:none;margin-bottom:6px}
+.ok-icon{width:48px;height:48px;border-radius:50%;background:#dcfce7;color:#16a34a;font-size:24px;display:flex;align-items:center;justify-content:center;font-weight:bold;margin:0 auto 8px}
+#toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#0f172a;color:#fff;padding:10px 16px;border-radius:8px;font-size:13px;z-index:300;display:none;max-width:90%}
+#toast.bad{background:#be123c}
+#printArea{position:fixed;left:-9999px;top:0;background:#f8fafc;padding:25px;width:1200px}
+@media print{
+ body{background:#fff;padding:0}
+ .header,.toolbar,.modal,#toast,#archiveBox,.btn,.sm,.card-foot,.pf-head button{display:none!important}
+ .board{flex-wrap:wrap;overflow:visible}.column{break-inside:avoid}
+ *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div>
+    <div style="display:flex;align-items:center;gap:8px"><h2>İplik Takip Masası</h2>
+      <span id="syncBadge" style="font-size:10px;background:#fef3c7;color:#92400e;padding:2px 8px;border-radius:10px;font-weight:bold">Bağlanıyor...</span></div>
+    <small style="color:#64748b">Konteyner &amp; Proforma Yönetim Sistemi</small>
+  </div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap">
+    <button class="btn btn-photo" data-act="photo">📸 Resim İndir</button>
+    <button class="btn btn-print" data-act="print">🖨️ Yazdır / PDF</button>
+    <button class="btn btn-green" data-act="xlsx">📊 Excel (.xlsx)</button>
+    <button class="btn btn-indigo" data-act="show" data-id="modalCompany">🏢 Firma Ekle / Sil</button>
+    <button class="btn btn-dark" data-act="show" data-id="modalProforma">📋 Proforma Yönetimi</button>
+  </div>
+</div>
+
+<div class="toolbar">
+  <input id="fQ" type="search" placeholder="🔎 Ara: konteyner no, proforma, firma, hat, sipariş detayı...">
+  <select id="fSt">
+    <option value="">Tüm durumlar</option>
+    <option value="white">Detaysız (Bekliyor)</option>
+    <option value="yellow">Sipariş Verildi</option>
+    <option value="green">Yüklendi (Yolda)</option>
+    <option value="red">Limanda</option>
+    <option value="blue">Depoda</option>
+  </select>
+</div>
+
+<div id="board" class="board"></div>
+
+<div id="archiveBox" style="background:#fff;padding:15px;border-radius:10px;border:1px solid #cbd5e1;margin-top:15px">
+  <h3>📦 Arşivlenen Proformalar (<span id="archiveCount">0</span>)</h3>
+  <small style="color:#64748b;display:block;margin:6px 0 12px">Arşivdeki kayıtları kalıcı silmek PIN kodu gerektirir.</small>
+  <div id="archive" style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start"></div>
+</div>
+
+<div id="printArea"></div>
+<div id="toast"></div>
+
+<!-- Bildirim -->
+<div id="modalSuccess" class="modal"><div class="mc" style="max-width:350px;text-align:center">
+  <div class="ok-icon">✓</div><h3 id="okTitle"></h3><p id="okDesc" style="color:#64748b;font-size:13px;margin:6px 0 12px"></p>
+  <button class="btn btn-dark" style="width:100%" data-act="close" data-id="modalSuccess">Tamam</button></div></div>
+
+<!-- PIN -->
+<div id="modalPin" class="modal"><div class="mc" style="max-width:350px">
+  <div class="mh"><span style="color:#b91c1c">🔒 Güvenlik Onayı</span><button class="btn btn-gray" data-act="close" data-id="modalPin">✕</button></div>
+  <p style="font-size:12px;color:#475569;margin-bottom:10px">Kalıcı silme için şifreyi giriniz:</p>
+  <input type="password" id="pinInput" inputmode="numeric" maxlength="4" placeholder="4 Haneli Şifre" style="width:100%;padding:10px;font-size:16px;text-align:center;letter-spacing:4px;font-weight:bold;border:2px solid #cbd5e1;border-radius:8px;margin-bottom:8px">
+  <p id="pinErr" class="err" style="text-align:center">Hatalı şifre! Silme iptal edildi.</p>
+  <div style="display:flex;gap:8px"><button class="btn btn-gray" style="flex:1" data-act="close" data-id="modalPin">İptal</button>
+  <button class="btn btn-danger" style="flex:1" data-act="pinOk">Silmeyi Onayla</button></div></div></div>
+
+<!-- Firma -->
+<div id="modalCompany" class="modal"><div class="mc">
+  <div class="mh"><span>Firma Yönetimi</span><button class="btn btn-gray" data-act="close" data-id="modalCompany">✕</button></div>
+  <div class="fg"><label>Yeni Firma Adı:</label><div style="display:flex;gap:5px"><input id="coName" placeholder="Örn: AKIN TEKSTİL"><button class="btn btn-indigo" data-act="addCo">Ekle</button></div></div>
+  <label style="font-size:12px;font-weight:bold">Mevcut Firmalar:</label>
+  <div id="coList" style="margin-top:5px;display:flex;flex-direction:column;gap:4px"></div></div></div>
+
+<!-- Proforma -->
+<div id="modalProforma" class="modal"><div class="mc">
+  <div class="mh"><span>Proforma Yönetimi</span><button class="btn btn-gray" data-act="close" data-id="modalProforma">✕</button></div>
+  <div class="fg"><label>Firma:</label><select id="pfSupp"></select></div>
+  <div class="row"><div class="fg"><label>Proforma No:</label><input id="pfNo" placeholder="Örn: PI-2026-01"></div>
+  <div class="fg"><label>Tarih:</label><input type="date" id="pfDate"></div></div>
+  <div class="row"><div class="fg"><label>Konteyner Sayısı:</label><input type="number" id="pfTotal" value="4" min="1" max="100"></div>
+  <div class="fg"><label>Fiyat ($):</label><input id="pfPrice" inputmode="decimal" placeholder="Örn: 24500"></div></div>
+  <button class="btn btn-dark" style="width:100%" data-act="addPf">Proformayı Kaydet</button>
+  <hr style="margin:15px 0;border:none;border-top:1px solid #e2e8f0">
+  <label style="font-size:12px;font-weight:bold">Kayıtlı Proformalar:</label>
+  <div id="pfList" style="margin-top:5px;display:flex;flex-direction:column;gap:5px"></div></div></div>
+
+<!-- Sipariş -->
+<div id="modalOrder" class="modal"><div class="mc">
+  <div class="mh"><span>📝 Sipariş Detayı</span><button class="btn btn-gray" data-act="close" data-id="modalOrder">✕</button></div>
+  <input type="hidden" id="orId">
+  <div class="fg"><label>Sipariş Giriş Tarihi:</label><input type="date" id="orDate"></div>
+  <div class="fg"><label>Sipariş Edilen İplik Kodları ve Tonaj:</label><textarea id="orText" rows="4" placeholder="Örn:&#10;150/48 TURLU: 14 Ton&#10;300/96 PUNTALI: 10 Ton"></textarea></div>
+  <button class="btn btn-indigo" style="width:100%" data-act="subOrder">Siparişi Kaydet</button></div></div>
+
+<!-- Yükleme -->
+<div id="modalStatus" class="modal"><div class="mc">
+  <div class="mh"><span>🟢 Yükleme Bilgileri (Zorunlu)</span><button class="btn btn-gray" data-act="close" data-id="modalStatus">✕</button></div>
+  <input type="hidden" id="stId">
+  <div class="fg"><label class="req">* Nakliye / Hat Firması:</label><input id="stLine" placeholder="Örn: MSC / MAERSK"></div>
+  <div class="row"><div class="fg"><label class="req">* Konteyner No:</label><input id="stNo" placeholder="MSCU7845120"></div>
+  <div class="fg"><label class="req">* Yükleme Tarihi:</label><input type="date" id="stDate"></div></div>
+  <div class="row"><div class="fg"><label class="req">* Yüklenen Tonaj (Ton):</label><input id="stW" inputmode="decimal" placeholder="24,5"></div>
+  <div class="fg"><label class="req">* Toplam Tutar ($):</label><input id="stCost" inputmode="decimal" placeholder="58750"></div></div>
+  <p id="stErr" class="err"></p>
+  <button class="btn btn-green" style="width:100%" data-act="subStatus">Yüklemeyi Kaydet</button></div></div>
+
+<!-- Varış -->
+<div id="modalArrival" class="modal"><div class="mc">
+  <div class="mh"><span>📅 Tahmini Varış</span><button class="btn btn-gray" data-act="close" data-id="modalArrival">✕</button></div>
+  <input type="hidden" id="arId">
+  <div class="fg"><label>⚓ Limana Tahmini Varış Tarihi:</label><input type="date" id="arDate"></div>
+  <div class="fg"><label>Konum / Süreç:</label><select id="arSt"><option value="green">🟢 Yolda / Seyir Halinde</option><option value="red">🔴 Limana Ulaştı</option></select></div>
+  <button class="btn btn-indigo" style="width:100%" data-act="subArrival">Tarihi Güncelle</button></div></div>
+
+<!-- Depo -->
+<div id="modalWarehouse" class="modal"><div class="mc">
+  <div class="mh"><span>🏢 Depo Teslim Girişi</span><button class="btn btn-gray" data-act="close" data-id="modalWarehouse">✕</button></div>
+  <input type="hidden" id="whId">
+  <div class="row"><div class="fg"><label>Depo Teslim Tarihi:</label><input type="date" id="whDate"></div>
+  <div class="fg"><label>Teslim Edilen Depo:</label><select id="whName"><option>RÜYA</option><option>KARAMAN</option><option>ACAR</option></select></div></div>
+  <button class="btn btn-indigo" style="width:100%" data-act="subWh">Depoya Girişi Onayla</button></div></div>
+
+<!-- Yoldaki konteyner: gerçek miktar düzeltme -->
+<div id="modalEdit" class="modal"><div class="mc">
+  <div class="mh"><span>✏️ Yük Miktarını Düzenle</span><button class="btn btn-gray" data-act="close" data-id="modalEdit">✕</button></div>
+  <input type="hidden" id="edId">
+  <p style="font-size:12px;color:#475569;margin-bottom:10px">Yükleme sonrası gerçekleşen miktarlara göre sipariş detayını, tonajı ve tutarı düzeltin.</p>
+  <div class="fg"><label>İplik Kodları ve Tonaj (Sipariş Detayı):</label><textarea id="edText" rows="5"></textarea></div>
+  <div class="row"><div class="fg"><label>Yüklenen Tonaj (Ton):</label><input id="edW" inputmode="decimal"></div>
+  <div class="fg"><label>Toplam Tutar ($):</label><input id="edCost" inputmode="decimal"></div></div>
+  <p id="edErr" class="err"></p>
+  <button class="btn btn-indigo" style="width:100%" data-act="subEdit">Değişiklikleri Kaydet</button></div></div>
+
+<script>
+/* ========== YARDIMCILAR ========== */
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+const PIN = "1989";
+const today = () => new Date().toISOString().slice(0, 10);
+// "58.750 $", "24,5", "1.234,56" -> sayı
+const num = v => {
+  if (typeof v === "number") return isFinite(v) ? v : 0;
+  let s = String(v ?? "").replace(/[^\d.,-]/g, "");
+  if (!s) return 0;
+  if (s.includes(",") && s.includes(".")) s = s.replace(/\./g, "").replace(",", ".");
+  else if (s.includes(",")) s = s.replace(",", ".");
+  else if (/^-?\d{1,3}(\.\d{3})+$/.test(s)) s = s.replace(/\./g, "");
+  const n = parseFloat(s); return isNaN(n) ? 0 : n;
+};
+const wt = v => parseFloat(String(v ?? "").replace(",", ".")) || 0;
+const fmt = (n, suf) => n ? n.toLocaleString("tr-TR", {maximumFractionDigits: 2}) + suf : "—";
+const money = n => fmt(n, " $"), ton = n => fmt(n, " Ton");
+const STATUS = {
+  white:  {label: "Detaysız (Bekliyor)",  short: "Detaysız",         cls: "bg-white",  xl: "FFF8FAFC"},
+  yellow: {label: "Sipariş Verildi",      short: "Sipariş Verildi",  cls: "bg-yellow", xl: "FFFEF3C7"},
+  green:  {label: "Yüklendi (Yolda)",     short: "Yüklendi (Yolda)", cls: "bg-green",  xl: "FFDCFCE7"},
+  red:    {label: "Limana Ulaştı",        short: "Limanda",          cls: "bg-red",    xl: "FFFEE2E2"},
+  blue:   {label: "Depoya Teslim Alındı", short: "Depoda",           cls: "bg-blue",   xl: "FFDBEAFE"}
+};
+let toastT;
+function toast(msg, bad) {
+  const t = $("toast"); t.textContent = msg; t.className = bad ? "bad" : ""; t.style.display = "block";
+  clearTimeout(toastT); toastT = setTimeout(() => t.style.display = "none", 4000);
+}
+const lib = (src, g) => window[g] ? Promise.resolve() : new Promise((ok, no) => {
+  const s = document.createElement("script"); s.src = src; s.onload = ok;
+  s.onerror = () => no(new Error("Kütüphane yüklenemedi (internet?)")); document.head.appendChild(s);
+});
+
+/* ========== FIREBASE ========== */
+const firebaseConfig = {
+  apiKey: "AIzaSyCwwSwyzbCKYj2D7JEwtQe13rT_8IPg7O8",
+  authDomain: "yarn-tracking-65734.firebaseapp.com",
+  projectId: "yarn-tracking-65734",
+  storageBucket: "yarn-tracking-65734.firebasestorage.app",
+  messagingSenderId: "493441372255",
+  appId: "1:493441372255:web:14bc6e52f15feca8724bea"
+};
+let db = null, coCol, pfCol, cnCol;
+try {
+  firebase.initializeApp(firebaseConfig);
+  db = firebase.firestore();
+  coCol = db.collection("yarn_companies"); pfCol = db.collection("yarn_proformas"); cnCol = db.collection("yarn_containers");
+} catch (e) { console.warn("Firebase başlatılamadı:", e); }
+
+function setBadge(on) {
+  const b = $("syncBadge");
+  b.textContent = on ? "Bulut Senkronize 🟢" : "Yerel Mod 🟡";
+  b.style.background = on ? "#dcfce7" : "#fef3c7"; b.style.color = on ? "#15803d" : "#92400e";
+}
+// Bulut yazması: hata olursa kullanıcıya göster
+function cloud(fn) {
+  if (!db) return;
+  try { Promise.resolve(fn()).catch(cloudFail); } catch (e) { cloudFail(e); }
+}
+function cloudFail(e) {
+  console.warn(e); setBadge(false);
+  toast("⚠️ Buluta kaydedilemedi (" + (e.code || e.message) + "). Veri yalnızca bu cihazda.", true);
+}
+const coId = n => n.replace(/\//g, "-");
+const stamp = () => firebase.firestore.FieldValue.serverTimestamp();
+
+/* ========== VERİ ========== */
+const load = (k, d) => { try { const s = localStorage.getItem(k); return s ? JSON.parse(s) : d; } catch (e) { return d; } };
+const keep = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} };
+let companies = load("app_companies_v1", ["DODHIA", "HARMONY", "AYM"]);
+let proformas = load("app_proformas_v1", []);
+let containers = load("app_containers_v1", []);
+const saveAll = () => { keep("app_companies_v1", companies); keep("app_proformas_v1", proformas); keep("app_containers_v1", containers); };
+
+// Eski kayıtlardaki metin tutar/tonajları sayıya çevir
+const normC = c => { c.weight = wt(c.weight); c.cost = c.cost != null ? num(c.cost) : num(c.totalCost); return c; };
+const normP = p => { p.price = num(p.price); return p; };
+proformas.forEach(normP); containers.forEach(normC);
+
+const ts = o => o.timestamp || (o.createdAt && o.createdAt.seconds ? o.createdAt.seconds * 1000 : 0) || parseInt(String(o.id).replace("pf_", ""), 10) || 0;
+const ord = c => parseInt(c.order, 10) || 0;
+
+function patchC(id, p) {
+  const c = containers.find(x => x.id === id); if (!c) return null;
+  Object.assign(c, p); saveAll();
+  cloud(() => cnCol.doc(id).update(p));
+  return c;
+}
+
+/* ========== BULUT DİNLEME ========== */
+const first = {};
+function listen(name, col, hasLocal, apply, seed) {
+  col.onSnapshot(snap => {
+    if (snap.empty && !first[name] && hasLocal()) seed();        // bulut boş, yerel dolu: yukarı çıkar
+    else apply(snap);                                              // boş olsa bile uygula (silmeler yansısın)
+    first[name] = true; saveAll(); setBadge(true); draw();
+  }, err => { console.warn(err); setBadge(false); });
+}
+if (db) {
+  listen("co", coCol, () => companies.length, snap => {
+    companies = snap.docs.map(d => d.data()).filter(d => d.name)
+      .sort((a, b) => ts(a) - ts(b) || a.name.localeCompare(b.name)).map(d => d.name);
+  }, () => companies.forEach((n, i) => cloud(() => coCol.doc(coId(n)).set({name: n, timestamp: i}))));
+  listen("pf", pfCol, () => proformas.length, snap => {
+    proformas = snap.docs.map(d => normP({id: d.id, ...d.data()}));
+  }, () => proformas.forEach(p => cloud(() => pfCol.doc(p.id).set(p))));
+  listen("cn", cnCol, () => containers.length, snap => {
+    containers = snap.docs.map(d => normC({id: d.id, ...d.data()}));
+  }, () => containers.forEach(c => cloud(() => cnCol.doc(c.id).set(c))));
+}
+
+/* ========== MODAL / PIN ========== */
+let pending = null;
+function show(id) {
+  $(id).classList.add("open");
+  if (id === "modalCompany") refreshCompanyUI();
+  if (id === "modalProforma") refreshProformaUI();
+}
+const hide = id => $(id).classList.remove("open");
+function ok(title, desc) { $("okTitle").textContent = title; $("okDesc").textContent = desc; show("modalSuccess"); }
+function askPin(cb) {
+  pending = cb; $("pinInput").value = ""; $("pinErr").style.display = "none";
+  show("modalPin"); setTimeout(() => $("pinInput").focus(), 100);
+}
+
+/* ========== FİRMA ========== */
+function refreshCompanyUI() {
+  $("coList").innerHTML = companies.map(c =>
+    `<div style="display:flex;justify-content:space-between;align-items:center;background:#f8fafc;padding:6px 8px;border-radius:4px;font-size:12px">
+      <strong>${esc(c)}</strong><button class="btn btn-danger" data-act="delCo" data-id="${esc(c)}">Sil ✕</button></div>`).join("");
+  $("pfSupp").innerHTML = companies.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join("");
+}
+function addCompany() {
+  const v = $("coName").value.trim().toUpperCase();
+  if (!v) return alert("Lütfen firma adı yazınız!");
+  if (companies.includes(v)) return alert("Bu firma zaten kayıtlı!");
+  companies.push(v); saveAll(); $("coName").value = "";
+  cloud(() => coCol.doc(coId(v)).set({name: v, timestamp: Date.now(), createdAt: stamp()}));
+  hide("modalCompany"); ok("Firma Eklendi!", `"${v}" firması eklendi.`); draw();
+}
+function delCompany(name) {
+  if (proformas.some(p => p.supplier === name && !p.isArchived))
+    return alert(`UYARI: "${name}" firmasına ait aktif proformalar var.\nÖnce proformalarını arşive taşıyın veya silin.`);
+  if (!confirm(`"${name}" firmasını silmek istediğinize emin misiniz?`)) return;
+  companies = companies.filter(c => c !== name); saveAll();
+  cloud(() => coCol.doc(coId(name)).delete());
+  refreshCompanyUI(); draw();
+}
+
+/* ========== PROFORMA ========== */
+function refreshProformaUI() {
+  $("pfList").innerHTML = proformas.filter(p => !p.isArchived).map(p => {
+    const n = containers.filter(c => c.pfId === p.id).length;
+    return `<div style="background:#f8fafc;border:1px solid #cbd5e1;padding:6px;border-radius:6px;font-size:12px;display:flex;justify-content:space-between;align-items:center;gap:6px">
+      <div><strong>[${esc(p.supplier)}] ${esc(p.no)}</strong> <span style="color:#059669;font-weight:bold">(Aktif)</span><br>
+      <small>Konteyner: ${n}/${p.total}${p.price ? " | " + money(p.price) : ""}</small></div>
+      <small style="color:#64748b">(Silmek için önce arşivleyin)</small></div>`;
+  }).join("") || "<small>Aktif proforma yok.</small>";
+}
+function addProforma() {
+  const supp = $("pfSupp").value, no = $("pfNo").value.trim().toUpperCase(), date = $("pfDate").value;
+  const total = parseInt($("pfTotal").value, 10), price = num($("pfPrice").value);
+  if (!supp) return alert("Lütfen bir firma seçiniz!");
+  if (!no) return alert("Lütfen Proforma No yazınız!");
+  if (!total || total < 1 || total > 100) return alert("Konteyner sayısı 1-100 arasında olmalı!");
+  if (proformas.some(p => p.supplier === supp && p.no === no) && !confirm("Bu firmada aynı numaralı proforma var. Yine de eklensin mi?")) return;
+  const t = Date.now(), pfId = "pf_" + t;
+  const pf = {id: pfId, supplier: supp, no, date, total, price, isArchived: false, timestamp: t};
+  const list = [];
+  for (let i = 1; i <= total; i++) list.push({
+    id: `cnt_${t}_${i}`, pfId, supplier: supp, pfNo: no, pfDate: date, order: `${i} / ${total}`,
+    no: "", shippingLine: "", weight: 0, cost: 0, orderDate: "", details: "", status: "white",
+    loadingDate: "", arrivalDate: "", warehouseDate: "", warehouseName: ""
+  });
+  proformas.unshift(pf); containers.push(...list); saveAll();
+  $("pfNo").value = ""; $("pfPrice").value = "";
+  cloud(() => {
+    const b = db.batch();
+    b.set(pfCol.doc(pfId), {...pf, createdAt: stamp()});
+    list.forEach(c => b.set(cnCol.doc(c.id), {...c, createdAt: stamp()}));
+    return b.commit();
+  });
+  hide("modalProforma"); ok("Proforma Oluşturuldu!", `[${supp}] "${no}" ve ${total} konteyner oluşturuldu.`); draw();
+}
+function archivePf(id, yes) {
+  const p = proformas.find(x => x.id === id); if (!p) return;
+  if (!confirm(`[${p.supplier}] "${p.no}" ${yes ? "arşive taşınsın mı?" : "aktif panoya geri alınsın mı?"}`)) return;
+  p.isArchived = yes; saveAll(); cloud(() => pfCol.doc(id).update({isArchived: yes})); draw();
+}
+function delPf(id) {
+  askPin(() => {
+    proformas = proformas.filter(p => p.id !== id);
+    const ids = containers.filter(c => c.pfId === id).map(c => c.id);
+    containers = containers.filter(c => c.pfId !== id); saveAll();
+    cloud(() => {
+      const b = db.batch(); b.delete(pfCol.doc(id)); ids.forEach(i => b.delete(cnCol.doc(i))); return b.commit();
+    });
+    refreshProformaUI(); draw();
+  });
+}
+function delCnt(id) {
+  askPin(() => {
+    containers = containers.filter(c => c.id !== id); saveAll();
+    cloud(() => cnCol.doc(id).delete()); draw();
+  });
+}
+
+/* ========== AŞAMALAR ========== */
+const cnt = id => containers.find(c => c.id === id);
+function openOrder(id) {
+  const c = cnt(id); if (!c) return;
+  $("orId").value = id; $("orDate").value = c.orderDate || today(); $("orText").value = c.details || ""; show("modalOrder");
+}
+function subOrder() {
+  const text = $("orText").value.trim();
+  if (!text) return alert("Lütfen sipariş detaylarını giriniz!");
+  const id = $("orId").value, c = cnt(id);
+  patchC(id, {details: text, orderDate: $("orDate").value, status: c && c.status === "white" ? "yellow" : c.status});
+  hide("modalOrder"); draw();
+}
+function openStatus(id) {
+  const c = cnt(id); if (!c) return;
+  $("stId").value = id; $("stLine").value = c.shippingLine || ""; $("stNo").value = c.no || "";
+  $("stDate").value = c.loadingDate || ""; $("stW").value = c.weight || ""; $("stCost").value = c.cost || "";
+  $("stErr").style.display = "none"; show("modalStatus");
+}
+function subStatus() {
+  const id = $("stId").value, c = cnt(id), e = $("stErr");
+  const line = $("stLine").value.trim().toUpperCase(), no = $("stNo").value.trim().toUpperCase();
+  const date = $("stDate").value, w = wt($("stW").value), cost = num($("stCost").value);
+  const bad = m => { e.textContent = m; e.style.display = "block"; };
+  if (!line || !no || !date || !w || !cost) return bad("Lütfen tüm zorunlu alanları eksiksiz doldurunuz!");
+  if (c.orderDate && date < c.orderDate) return bad("Yükleme tarihi sipariş tarihinden önce olamaz!");
+  if (containers.some(x => x.id !== id && x.no === no)) return bad("Bu konteyner numarası başka bir kartta kayıtlı!");
+  const keepStatus = c.status === "red" || c.status === "blue" ? c.status : "green";
+  patchC(id, {shippingLine: line, no, loadingDate: date, weight: w, cost, status: keepStatus});
+  hide("modalStatus"); draw();
+}
+function openArrival(id) {
+  const c = cnt(id); if (!c) return;
+  $("arId").value = id; $("arDate").value = c.arrivalDate || ""; $("arSt").value = c.status === "red" ? "red" : "green"; show("modalArrival");
+}
+function subArrival() {
+  const id = $("arId").value, c = cnt(id), d = $("arDate").value;
+  if (d && c.loadingDate && d < c.loadingDate) return alert("Varış tarihi yükleme tarihinden önce olamaz!");
+  patchC(id, {arrivalDate: d, status: $("arSt").value}); hide("modalArrival"); draw();
+}
+function openWh(id) {
+  const c = cnt(id); if (!c) return;
+  $("whId").value = id; $("whDate").value = c.warehouseDate || ""; $("whName").value = c.warehouseName || "RÜYA"; show("modalWarehouse");
+}
+function subWh() {
+  const id = $("whId").value, c = cnt(id), d = $("whDate").value;
+  if (!d) return alert("Lütfen depo teslim tarihini seçiniz!");
+  const min = c.arrivalDate || c.loadingDate;
+  if (min && d < min) return alert("Depo teslim tarihi varış/yükleme tarihinden önce olamaz!");
+  patchC(id, {status: "blue", warehouseDate: d, warehouseName: $("whName").value}); hide("modalWarehouse"); draw();
+}
+// Yolda (Yüklendi) kartı: gerçekleşen miktarları düzelt (hat, konteyner no ve tarihler değişmez)
+function editCnt(id) {
+  const c = cnt(id); if (!c || c.status !== "green") return;
+  $("edId").value = id; $("edText").value = c.details || "";
+  $("edW").value = c.weight || ""; $("edCost").value = c.cost || "";
+  $("edErr").style.display = "none"; show("modalEdit");
+}
+function subEdit() {
+  const id = $("edId").value, c = cnt(id), e = $("edErr");
+  if (!c) return;
+  const details = $("edText").value.trim(), w = wt($("edW").value), cost = num($("edCost").value);
+  if (!details || !w || !cost) { e.textContent = "Sipariş detayı, tonaj ve tutar boş bırakılamaz!"; e.style.display = "block"; return; }
+  patchC(id, {details, weight: w, cost});
+  hide("modalEdit"); draw();
+}
+
+/* ========== ÇİZİM ========== */
+const F = {q: "", st: ""};
+const match = (c, pf) => {
+  if (F.st && c.status !== F.st) return false;
+  if (!F.q) return true;
+  return [c.supplier, c.pfNo, c.no, c.shippingLine, c.details, c.warehouseName, pf && pf.no].join(" ").toLowerCase().includes(F.q);
+};
+let rq = 0;
+const draw = () => { cancelAnimationFrame(rq); rq = requestAnimationFrame(render); };
+
+function card(c, arch) {
+  const s = STATUS[c.status] || STATUS.white;
+  let act = "";
+  const b = (cls, a, t) => `<button class="btn sm ${cls}" data-act="${a}" data-id="${esc(c.id)}">${t}</button>`;
+  if (arch) act = `<button class="btn btn-danger" data-act="delCnt" data-id="${esc(c.id)}">🗑️ Sil 🔒</button>`;
+  else if (c.status === "white") act = b("btn-order", "order", "📝 Sipariş Ver");
+  else if (c.status === "yellow") act = b("btn-green", "status", "🔄 Durumu Güncelle");
+  else if (c.status === "green" || c.status === "red") act = `<div style="display:flex;gap:4px">${b("btn-indigo", "arrival", "📅 Tahmini Varış")}${b("btn-dark", "wh", "🏢 Depo Girişi")}</div>`;
+  else act = b("btn-dark", "wh", "🏢 Depo: " + esc(c.warehouseName || "Giriş Yapıldı"));
+  return `<div class="card">
+    <div class="card-head ${s.cls}"><span>${esc(c.order)}</span><b>${esc(c.supplier)}</b><span>${s.short}</span></div>
+    <div class="card-body">
+      ${c.orderDate ? `<div>📝 Sipariş Tarihi: <b style="color:#b45309">${esc(c.orderDate)}</b></div>` : ""}
+      ${c.shippingLine ? `<div>🚢 Hat/Firma: <b>${esc(c.shippingLine)}</b></div>` : ""}
+      ${c.no ? `<div class="cno">Konteyner: ${esc(c.no)}</div>` : ""}
+      ${c.loadingDate ? `<div>📦 Yükleme Tarihi: <b>${esc(c.loadingDate)}</b></div>` : ""}
+      ${c.arrivalDate ? `<div>⚓ Tahmini/Varış: <b style="color:#0284c7">${esc(c.arrivalDate)}</b></div>` : ""}
+      ${c.warehouseDate || c.warehouseName ? `<div style="border-top:1px solid #e2e8f0;padding-top:2px;color:#2563eb">🏢 Teslim: <b>${esc(c.warehouseName || "—")}</b> (${esc(c.warehouseDate || "")})</div>` : ""}
+      <div class="det">${c.details ? "<b>Sipariş:</b>\n" + esc(c.details) : '<span style="color:#94a3b8;font-style:italic">Sipariş detayı henüz girilmedi</span>'}</div>
+      ${c.weight || c.cost ? `<div class="sumbox"><span>⚖️ ${ton(c.weight)}</span><span>💵 ${money(c.cost)}</span></div>` : ""}
+    </div>
+    <div class="card-foot">${act}${!arch && c.status === "green" ? `<button class="btn btn-gray sm" data-act="edit" data-id="${esc(c.id)}">✏️ Düzenle</button>` : ""}</div>
+  </div>`;
+}
+
+function render() {
+  const byPf = new Map();
+  containers.forEach(c => { (byPf.get(c.pfId) || byPf.set(c.pfId, []).get(c.pfId)).push(c); });
+  byPf.forEach(a => a.sort((x, y) => ord(x) - ord(y)));
+  const filtering = !!(F.q || F.st);
+  const view = p => {                       // proforma + filtrelenmiş kartları
+    const all = byPf.get(p.id) || [];
+    const list = all.filter(c => match(c, p));
+    return {all, list, hidden: filtering && !list.length};
+  };
+  const sorted = a => a.sort((x, y) => ts(y) - ts(x));
+
+  $("board").innerHTML = companies.map(comp => {
+    const pfs = sorted(proformas.filter(p => p.supplier === comp && !p.isArchived));
+    let w = 0, cost = 0;
+    const blocks = pfs.map(p => {
+      const v = view(p);
+      v.all.forEach(c => { w += c.weight || 0; cost += c.cost || 0; });
+      if (v.hidden) return "";
+      return `<div class="pf-block">
+        <div class="pf-head"><span class="pf-tag">${esc(p.no)}</span>
+          <span style="font-size:11px;font-weight:bold;color:#059669">${p.price ? money(p.price) : ""}</span>
+          <button class="btn sm btn-arch" data-act="archive" data-id="${esc(p.id)}">📦 Arşivle</button></div>
+        <div class="pf-meta"><span>📅 ${esc(p.date || "Tarih Yok")}</span><span>Konteyner: ${v.all.length} / ${p.total}</span></div>
+        ${v.list.map(c => card(c, false)).join("")}</div>`;
+    }).join("");
+    return `<div class="column">
+      <div class="col-head"><span>${esc(comp)}</span><span class="pill">${pfs.length} Aktif Proforma</span></div>
+      ${w || cost ? `<div class="col-sum"><span>⚖️ ${ton(w)}</span><span>💵 ${money(cost)}</span></div>` : ""}
+      ${blocks.trim() ? blocks : `<div style="text-align:center;padding:35px 0;color:#94a3b8;font-size:12px;border:2px dashed #cbd5e1;border-radius:8px">${filtering ? "Eşleşen kayıt yok" : "Aktif Proforma Yok"}</div>`}
+    </div>`;
+  }).join("");
+
+  const arch = sorted(proformas.filter(p => p.isArchived));
+  $("archiveCount").textContent = arch.length;
+  $("archive").innerHTML = arch.map(p => {
+    const v = view(p); if (v.hidden) return "";
+    return `<div class="pf-block" style="width:320px;border-color:#0284c7;background:#f0f9ff">
+      <div class="pf-head"><span class="pf-tag" style="background:#0284c7">${esc(p.supplier)} - ${esc(p.no)}</span>
+        <div style="display:flex;gap:4px"><button class="btn sm btn-rest" data-act="restore" data-id="${esc(p.id)}">↩ Geri Al</button>
+        <button class="btn btn-danger" data-act="delPf" data-id="${esc(p.id)}">🗑️ Sil 🔒</button></div></div>
+      <div class="pf-meta"><span>📅 ${esc(p.date || "Tarih Yok")}</span><span>${p.price ? money(p.price) : ""}</span></div>
+      ${v.list.map(c => card(c, true)).join("")}</div>`;
+  }).join("") || "<small style='color:#94a3b8'>Arşivlenmiş proforma bulunmuyor.</small>";
+}
+
+/* ========== ÇIKTILAR ========== */
+const activeCnts = () => containers.filter(c => {
+  const p = proformas.find(x => x.id === c.pfId);
+  return p && !p.isArchived && ["yellow", "green", "red"].includes(c.status);
+});
+async function photo(btn) {
+  const list = activeCnts();
+  if (!list.length) return alert("Siparişte, yolda veya limanda aktif konteyner bulunamadı!");
+  btn.disabled = true;
+  const area = $("printArea");
+  try {
+    await lib("https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js", "html2canvas");
+    area.innerHTML = `<div style="margin-bottom:15px;border-bottom:2px solid #0f172a;padding-bottom:10px"><h2>📦 Aktif Konteyner Sevkiyat Durum Raporu</h2>
+      <small style="color:#64748b">Rapor Tarihi: ${new Date().toLocaleString("tr-TR")} | Toplam: ${list.length} Konteyner</small></div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:15px">${list.map(c => "<div>" + card(c, true).replace(/<div class="card-foot">[\s\S]*?<\/div>\s*<\/div>$/, "</div>") + "</div>").join("")}</div>`;
+    const canvas = await html2canvas(area, {scale: 2, useCORS: true});
+    const a = document.createElement("a");
+    a.download = "Aktif_Sevkiyat_" + today() + ".png"; a.href = canvas.toDataURL("image/png"); a.click();
+  } catch (e) { alert("Resim oluşturulamadı: " + e.message); }
+  area.innerHTML = ""; btn.disabled = false;
+}
+
+async function xlsx(btn) {
+  if (!containers.length) return alert("Raporlanacak konteyner yok!");
+  btn.disabled = true;
+  try {
+    await lib("https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js", "ExcelJS");
+    const wb = new ExcelJS.Workbook(), ws = wb.addWorksheet("Konteynerler", {views: [{state: "frozen", ySplit: 1}]});
+    ws.columns = [
+      ["Tedarikçi Firma", 18], ["Proforma No", 16], ["Proforma Tarihi", 14], ["Sıra", 8], ["Konteyner No", 16], ["Hat / Acente", 16],
+      ["Sevkiyat Durumu", 22], ["Masa Durumu", 13], ["Yüklenen Tonaj (Ton)", 14], ["Toplam Tutar ($)", 15], ["Sipariş Tarihi", 13],
+      ["Yükleme Tarihi", 13], ["Tahmini Varış", 13], ["Depo Teslim Tarihi", 15], ["Teslim Depo", 12], ["Sipariş / İplik Detayları", 45]
+    ].map(([header, width]) => ({header, width}));
+    const hr = ws.getRow(1);
+    hr.font = {bold: true, color: {argb: "FFFFFFFF"}}; hr.alignment = {horizontal: "center", vertical: "middle", wrapText: true}; hr.height = 32;
+    hr.eachCell(c => c.fill = {type: "pattern", pattern: "solid", fgColor: {argb: "FF0F172A"}});
+    const rows = [...containers].sort((a, b) => a.supplier.localeCompare(b.supplier) || String(a.pfNo).localeCompare(String(b.pfNo)) || ord(a) - ord(b));
+    rows.forEach(c => {
+      const p = proformas.find(x => x.id === c.pfId), s = STATUS[c.status] || STATUS.white;
+      const r = ws.addRow([c.supplier, c.pfNo, c.pfDate, c.order, c.no, c.shippingLine, s.label, p && p.isArchived ? "Arşivde" : "Aktif Masada",
+        c.weight || null, c.cost || null, c.orderDate, c.loadingDate, c.arrivalDate, c.warehouseDate, c.warehouseName, c.details]);
+      r.eachCell({includeEmpty: true}, cell => {
+        cell.fill = {type: "pattern", pattern: "solid", fgColor: {argb: s.xl}};
+        cell.border = {top: {style: "thin"}, left: {style: "thin"}, bottom: {style: "thin"}, right: {style: "thin"}};
+        cell.alignment = {vertical: "top", wrapText: true};
+      });
+    });
+    ws.getColumn(9).numFmt = "#,##0.00"; ws.getColumn(10).numFmt = '#,##0.00 "$"';
+    const n = rows.length + 1, t = ws.addRow(["TOPLAM", "", "", "", "", "", "", "", {formula: `SUM(I2:I${n})`}, {formula: `SUM(J2:J${n})`}]);
+    t.font = {bold: true}; t.getCell(9).numFmt = "#,##0.00"; t.getCell(10).numFmt = '#,##0.00 "$"';
+    ws.autoFilter = {from: "A1", to: "P1"};
+    const buf = await wb.xlsx.writeBuffer();
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([buf], {type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}));
+    a.download = "Iplik_Konteyner_Raporu_" + today() + ".xlsx"; document.body.appendChild(a); a.click(); a.remove();
+  } catch (e) { alert("Excel oluşturulamadı: " + e.message); }
+  btn.disabled = false;
+}
+
+/* ========== OLAYLAR (tek noktadan) ========== */
+const ACT = {
+  show: (id) => show(id), close: (id) => hide(id),
+  addCo: addCompany, delCo: delCompany, addPf: addProforma,
+  archive: id => archivePf(id, true), restore: id => archivePf(id, false),
+  delPf, delCnt, order: openOrder, status: openStatus, arrival: openArrival, wh: openWh, edit: editCnt, subEdit,
+  subOrder, subStatus, subArrival, subWh,
+  photo: (id, b) => photo(b), xlsx: (id, b) => xlsx(b), print: () => window.print(),
+  pinOk: () => {
+    if ($("pinInput").value.trim() === PIN) { hide("modalPin"); const f = pending; pending = null; if (f) f(); }
+    else $("pinErr").style.display = "block";
+  }
+};
+document.addEventListener("click", e => {
+  const el = e.target.closest("[data-act]"); if (!el) return;
+  const fn = ACT[el.dataset.act]; if (fn) fn(el.dataset.id, el);
+});
+$("fQ").addEventListener("input", e => { F.q = e.target.value.trim().toLowerCase(); draw(); });
+$("fSt").addEventListener("change", e => { F.st = e.target.value; draw(); });
+$("pinInput").addEventListener("keydown", e => { if (e.key === "Enter") ACT.pinOk(); });
+$("coName").addEventListener("keydown", e => { if (e.key === "Enter") addCompany(); });
+
+/* ========== BAŞLANGIÇ ========== */
+refreshCompanyUI(); draw();
+if (!db) setBadge(false);
+</script>
+</body>
+</html>
