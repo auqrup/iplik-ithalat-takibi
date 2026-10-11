@@ -3,249 +3,232 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#10283b">
   <title>İplik Takip Masası</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
-  <!-- Ekran Görüntüsü / Resim Alma -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-  <!-- Gerçek .xlsx (renkli) -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
-  <!-- Firebase SDK -->
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
 </head>
 <body>
 
-  <!-- Üst Menü -->
-  <div class="header">
-    <div>
-      <div class="header-title">
-        <h2>İplik Takip Masası</h2>
-        <span id="syncBadge" class="sync-badge">Bağlanıyor...</span>
+  <header class="topbar">
+    <div class="topbar-in">
+      <div class="brand">
+        <div class="brand-mark" id="brandMark"></div>
+        <div>
+          <h1>İplik Takip Masası</h1>
+          <p>Proforma ve konteyner takibi</p>
+        </div>
+        <span id="syncBadge" class="sync">Bağlanıyor...</span>
       </div>
-      <small>Konteyner &amp; Proforma Yönetim Sistemi</small>
-    </div>
-    <div class="header-actions">
-      <button class="btn btn-photo" onclick="captureActiveCardsAsImage()">📸 Aktif Kartları Resim Olarak İndir</button>
-      <button class="btn btn-green" onclick="exportDetailedExcel()">📊 Detaylı Renkli Excel İndir</button>
-      <button class="btn btn-indigo" onclick="showModal('modalCompany')">🏢 Firma Ekle / Sil</button>
-      <button class="btn btn-dark" onclick="showModal('modalProforma')">📋 Proforma Yönetimi</button>
-    </div>
-  </div>
 
-  <!-- Ana Kolonlar -->
-  <div id="boardContainer" class="board"></div>
+      <div class="search" id="searchBox">
+        <input id="searchInput" type="search" placeholder="Konteyner no, proforma, iplik kodu ara" autocomplete="off">
+      </div>
 
-  <!-- Arşiv -->
-  <div class="archive-panel">
-    <div class="archive-head">
-      <h3>📦 Arşivlenen Proformalar &amp; Konteynerler (<span id="archiveCount">0</span> Proforma)</h3>
+      <div class="top-actions">
+        <button class="btn btn-primary" data-action="newProforma">+ Yeni proforma</button>
+        <div class="menu-wrap">
+          <button class="btn btn-ghost" data-action="menu">Rapor al</button>
+          <div class="menu">
+            <button data-action="exportExcel">Excel dosyası (.xlsx)</button>
+            <button data-action="exportImage">Resim olarak (PNG)</button>
+          </div>
+        </div>
+        <button class="btn btn-ghost" data-action="openCompanies">Firmalar</button>
+      </div>
     </div>
-    <small class="archive-note">Arşivdeki kayıtları kalıcı silmek PIN kodu gerektirir.</small>
-    <div id="archiveContainer" class="archive-list"></div>
-  </div>
+  </header>
+
+  <main class="page">
+    <section id="pipeline" class="pipeline" aria-label="Aşamalara göre konteynerler"></section>
+    <section id="arrivals" class="arrivals"></section>
+    <div id="toolbar" class="toolbar"></div>
+    <div id="boardContainer"></div>
+    <div id="archiveContainer" hidden></div>
+  </main>
 
   <div id="printCanvasArea"></div>
+  <div id="toasts" class="toasts" aria-live="polite"></div>
 
-  <!-- BİLDİRİM MODALI -->
-  <div id="modalSuccess" class="modal">
-    <div class="modal-content narrow">
-      <div class="success-box">
-        <div class="success-icon">✓</div>
-        <h3 id="successTitle" style="color:#1e293b; font-size:16px;">İşlem Başarılı!</h3>
-        <p id="successDesc" style="color:#64748b; font-size:13px;">Kayıt başarıyla işlendi.</p>
-        <button class="btn btn-dark" style="width:100%; margin-top:5px;" onclick="hideModal('modalSuccess')">Tamam</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- PIN KORUMA MODALI -->
-  <div id="modalPinAuth" class="modal">
-    <div class="modal-content narrow">
-      <div class="modal-head">
-        <span style="color:#b91c1c;">🔒 Güvenlik Onayı</span>
-        <button class="btn btn-gray" onclick="hideModal('modalPinAuth')">✕</button>
-      </div>
-      <p style="font-size:12px; color:#475569; margin-bottom:10px;">Arşivden kalıcı silme işlemi için PIN kodunu giriniz:</p>
-      <input type="password" id="inputPinCode" placeholder="Şifre" maxlength="4" style="width:100%; padding:10px; font-size:16px; text-align:center; letter-spacing:4px; font-weight:bold; border:2px solid #cbd5e1; border-radius:8px; margin-bottom:8px;">
-      <p id="pinErrorMsg" style="color:#e11d48; font-size:11px; font-weight:bold; display:none; margin-bottom:8px; text-align:center;">Hatalı şifre!</p>
-      <div style="display:flex; gap:8px;">
-        <button class="btn btn-gray" style="flex:1;" onclick="hideModal('modalPinAuth')">İptal</button>
-        <button class="btn btn-danger" style="flex:1;" onclick="validateAndExecutePin()">Silmeyi Onayla</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- MODAL: Firma Yönetimi -->
+  <!-- Firmalar -->
   <div id="modalCompany" class="modal">
-    <div class="modal-content">
-      <div class="modal-head">
-        <span>Firma Yönetimi</span>
-        <button class="btn btn-gray" onclick="hideModal('modalCompany')">✕</button>
+    <div class="sheet">
+      <div class="sheet-head">
+        <div><h3>Firmalar</h3><p class="sheet-sub">Anlaşma yaptığınız tedarikçiler</p></div>
+        <button class="icon-btn" onclick="hideModal('modalCompany')" aria-label="Kapat">✕</button>
       </div>
-      <div class="form-group">
-        <label>Yeni Firma Adı:</label>
-        <div style="display:flex; gap:5px;">
-          <input type="text" id="inputCompName" placeholder="Örn: AKIN TEKSTİL">
-          <button class="btn btn-indigo" onclick="addCompany()">Ekle</button>
+      <div class="sheet-body">
+        <div class="f">
+          <label for="inputCompName">Yeni firma adı</label>
+          <div style="display:flex; gap:8px;">
+            <input type="text" id="inputCompName" placeholder="Örn: AKIN TEKSTİL">
+            <button class="btn btn-primary" onclick="addCompany()">Firma ekle</button>
+          </div>
         </div>
+        <div id="companyList"></div>
       </div>
-      <hr class="divider">
-      <label style="font-size:12px; font-weight:bold;">Mevcut Firmalar:</label>
-      <div id="companyList" style="margin-top:5px; display:flex; flex-direction:column; gap:4px;"></div>
     </div>
   </div>
 
-  <!-- MODAL: Proforma Yönetimi -->
+  <!-- Proforma (yeni / düzenle) -->
   <div id="modalProforma" class="modal">
-    <div class="modal-content">
-      <div class="modal-head">
-        <span>Proforma Yönetimi</span>
-        <button class="btn btn-gray" onclick="hideModal('modalProforma')">✕</button>
+    <div class="sheet">
+      <div class="sheet-head">
+        <div><h3 id="pfModalTitle">Yeni proforma</h3><p class="sheet-sub" id="pfModalSub">Konteynerler otomatik oluşturulur</p></div>
+        <button class="icon-btn" onclick="hideModal('modalProforma')" aria-label="Kapat">✕</button>
       </div>
-      <div class="form-group">
-        <label>Firma:</label>
-        <select id="pfSupplierSelect"></select>
+      <div class="sheet-body">
+        <div class="row2">
+          <div class="f"><label for="pfSupplierSelect">Firma <span class="req">*</span></label><select id="pfSupplierSelect"></select></div>
+          <div class="f"><label for="pfNumber">Proforma no <span class="req">*</span></label><input type="text" id="pfNumber" placeholder="Örn: PI-2026-01"></div>
+        </div>
+        <div class="row2">
+          <div class="f"><label for="pfDate">Proforma tarihi</label><input type="date" id="pfDate"></div>
+          <div class="f">
+            <label for="pfIncoterm">Teslim şekli <span class="req">*</span></label>
+            <select id="pfIncoterm">
+              <option value="">Seçiniz</option>
+              <option value="FOB">FOB</option>
+              <option value="CNF">CNF</option>
+              <option value="CIF">CIF</option>
+              <option value="EXW">EXW</option>
+            </select>
+          </div>
+        </div>
+        <p class="help" id="pfIncotermHelp" style="font-size:12px; color:var(--muted); margin:-6px 0 12px;"></p>
+        <div class="row2">
+          <div class="f"><label for="pfLoadPort">Yükleme limanı</label><input type="text" id="pfLoadPort" placeholder="Örn: Mundra"></div>
+          <div class="f"><label for="pfDestPort">Varış limanı</label><input type="text" id="pfDestPort" placeholder="Örn: Mersin"></div>
+        </div>
+        <div class="row2">
+          <div class="f"><label for="pfTotal">Konteyner sayısı <span class="req">*</span></label><input type="number" id="pfTotal" value="4" min="1"></div>
+          <div class="f"><label for="pfPrice">Toplam fiyat ($)</label><input type="text" id="pfPrice" inputmode="decimal" placeholder="Örn: 24.500 $"></div>
+        </div>
+        <div class="f"><label for="pfContractTon">Sözleşme miktarı (ton)</label><input type="number" step="0.01" id="pfContractTon" placeholder="Boş bırakılabilir"><span class="help">Girerseniz sipariş edilen ve kalan miktar görünür.</span></div>
+        <div class="f"><label for="pfNote">Not</label><textarea id="pfNote" placeholder="Ödeme şartı, özel anlaşma, hatırlatma..."></textarea></div>
+        <p id="pfError" class="formerr"></p>
+        <button class="btn btn-primary btn-block" id="pfSaveBtn" onclick="saveProforma()">Proformayı kaydet</button>
       </div>
-      <div class="row">
-        <div class="form-group">
-          <label>Proforma No:</label>
-          <input type="text" id="pfNumber" placeholder="Örn: PI-2026-01">
-        </div>
-        <div class="form-group">
-          <label>Tarih:</label>
-          <input type="date" id="pfDate">
-        </div>
-      </div>
-      <div class="row">
-        <div class="form-group">
-          <label>Konteyner Sayısı:</label>
-          <input type="number" id="pfTotal" value="4" min="1">
-        </div>
-        <div class="form-group">
-          <label>Fiyat ($):</label>
-          <input type="text" id="pfPrice" placeholder="Örn: 24.500 $">
-        </div>
-      </div>
-      <button class="btn btn-dark" style="width:100%; margin-top:5px;" onclick="addProforma()">Proformayı Kaydet</button>
-      <hr class="divider" style="margin:15px 0;">
-      <label style="font-size:12px; font-weight:bold;">Kayıtlı Proformalar:</label>
-      <div id="proformaList" style="margin-top:5px; display:flex; flex-direction:column; gap:5px;"></div>
     </div>
   </div>
 
-  <!-- MODAL 1: SİPARİŞ VERME -->
+  <!-- Sipariş (ton) -->
   <div id="modalOrder" class="modal">
-    <div class="modal-content">
-      <div class="modal-head">
-        <span>📝 Sipariş Detayları (Ton Olarak)</span>
-        <button class="btn btn-gray" onclick="hideModal('modalOrder')">✕</button>
+    <div class="sheet">
+      <div class="sheet-head">
+        <div><h3>Sipariş bilgisi</h3><p class="sheet-sub" id="orderSub"></p></div>
+        <button class="icon-btn" onclick="hideModal('modalOrder')" aria-label="Kapat">✕</button>
       </div>
-      <input type="hidden" id="orderCntId">
-      <div class="form-group">
-        <label>Sipariş Giriş Tarihi:</label>
-        <input type="date" id="orderDateInput">
+      <div class="sheet-body">
+        <input type="hidden" id="orderCntId">
+        <div class="f"><label for="orderDateInput">Sipariş tarihi</label><input type="date" id="orderDateInput"></div>
+        <span class="flabel">İplik / renk kodu ve miktar (ton)</span>
+        <div id="orderItemsContainer" style="margin-top:6px;"></div>
+        <button class="btn btn-ghost btn-sm" type="button" onclick="addOrderRow('', '')">+ Satır ekle</button>
+        <div id="orderTotalInfo" class="total-line"></div>
+        <button class="btn btn-primary btn-block" onclick="submitOrder()">Siparişi kaydet</button>
       </div>
-      <label class="field-title">İplik / Renk Kodları ve Miktar (Ton):</label>
-      <div id="orderItemsContainer"></div>
-      <button class="btn btn-gray btn-small" type="button" onclick="addOrderRow('', '')">+ Yeni İplik/Renk Satırı Ekle</button>
-      <div id="orderTotalInfo" class="total-info"></div>
-      <button class="btn btn-indigo" style="width:100%;" onclick="submitOrder()">Siparişi Kaydet</button>
     </div>
   </div>
 
-  <!-- MODAL 2: YÜKLEME VE KG BAZLI DETAY -->
+  <!-- Yükleme (kg) -->
   <div id="modalStatus" class="modal">
-    <div class="modal-content">
-      <div class="modal-head">
-        <span>🟢 Yükleme Bilgileri &amp; Fiili Ağırlık (Kg)</span>
-        <button class="btn btn-gray" onclick="hideModal('modalStatus')">✕</button>
+    <div class="sheet">
+      <div class="sheet-head">
+        <div><h3>Yükleme bilgisi</h3><p class="sheet-sub" id="statusSub"></p></div>
+        <button class="icon-btn" onclick="hideModal('modalStatus')" aria-label="Kapat">✕</button>
       </div>
-      <input type="hidden" id="statusCntId">
-
-      <div class="form-group">
-        <label class="req">* Nakliye / Hat Firması:</label>
-        <input type="text" id="statusShippingLine" placeholder="Örn: MSC / MAERSK">
+      <div class="sheet-body">
+        <input type="hidden" id="statusCntId">
+        <div class="row2">
+          <div class="f"><label for="statusCntNo">Konteyner no <span class="req">*</span></label><input type="text" id="statusCntNo" placeholder="MSCU7845120" autocapitalize="characters"></div>
+          <div class="f"><label for="statusLoadingDate">Yükleme tarihi <span class="req">*</span></label><input type="date" id="statusLoadingDate"></div>
+        </div>
+        <div class="row2">
+          <div class="f"><label for="statusShippingLine">Hat / nakliye firması <span class="req">*</span></label><input type="text" id="statusShippingLine" placeholder="MSC, MAERSK..."></div>
+          <div class="f"><label for="statusBl">B/L no</label><input type="text" id="statusBl" placeholder="İsteğe bağlı"></div>
+        </div>
+        <span class="flabel">Yüklenen iplik / renk kodu ve net kilo (kg)</span>
+        <div id="loadedItemsContainer" style="margin-top:6px;"></div>
+        <button class="btn btn-ghost btn-sm" type="button" onclick="addLoadedRow('', '')" style="margin-bottom:12px;">+ Satır ekle</button>
+        <div class="row2">
+          <div class="f"><label for="statusWeightKg">Toplam net kilo (kg) <span class="req">*</span></label><input type="number" step="1" id="statusWeightKg" placeholder="Kalemlerden otomatik dolar"></div>
+          <div class="f"><label for="statusTotalCost">Toplam tutar ($) <span class="req">*</span></label><input type="text" id="statusTotalCost" inputmode="decimal" placeholder="58.750 $"></div>
+        </div>
+        <div id="weightCheck" class="wcheck"></div>
+        <p id="statusErrorText" class="formerr">Kırmızı yıldızlı alanların hepsini doldurun.</p>
+        <button class="btn btn-primary btn-block" id="statusSaveBtn" onclick="submitStatus()">Yüklemeyi kaydet</button>
       </div>
-
-      <div class="row">
-        <div class="form-group">
-          <label class="req">* Konteyner No:</label>
-          <input type="text" id="statusCntNo" placeholder="Örn: MSCU7845120">
-        </div>
-        <div class="form-group">
-          <label class="req">* Yükleme Tarihi:</label>
-          <input type="date" id="statusLoadingDate">
-        </div>
-      </div>
-
-      <div class="row">
-        <div class="form-group">
-          <label class="req">* Toplam Yüklenen Net Kilo (Kg):</label>
-          <input type="number" step="1" id="statusWeightKg" placeholder="Örn: 24350 Kg">
-        </div>
-        <div class="form-group">
-          <label class="req">* Toplam Tutar ($ Dolar):</label>
-          <input type="text" id="statusTotalCost" placeholder="Örn: 58.750 $">
-        </div>
-      </div>
-
-      <label class="field-title">Yüklenen İplik / Renk Kodları ve Net Kilolar (Kg):</label>
-      <div id="loadedItemsContainer"></div>
-      <button class="btn btn-gray btn-small" type="button" onclick="addLoadedRow('', '')">+ Yeni Yükleme Satırı Ekle</button>
-
-      <div id="weightCheck" class="weight-check"></div>
-      <p id="statusErrorText" class="error-text">Lütfen tüm zorunlu alanları eksiksiz doldurunuz!</p>
-
-      <button class="btn btn-green" style="width:100%; margin-top:8px;" onclick="submitStatus()">Yüklemeyi Kaydet (Yeşile Geçir)</button>
     </div>
   </div>
 
-  <!-- MODAL 3: TAHMİNİ VARIŞ TARİHİ -->
+  <!-- Varış -->
   <div id="modalArrival" class="modal">
-    <div class="modal-content">
-      <div class="modal-head">
-        <span>📅 Tahmini Varış Tarihi Belirle</span>
-        <button class="btn btn-gray" onclick="hideModal('modalArrival')">✕</button>
+    <div class="sheet narrow">
+      <div class="sheet-head">
+        <div><h3>Varış bilgisi</h3><p class="sheet-sub" id="arrivalSub"></p></div>
+        <button class="icon-btn" onclick="hideModal('modalArrival')" aria-label="Kapat">✕</button>
       </div>
-      <input type="hidden" id="arrivalCntId">
-      <div class="form-group">
-        <label>⚓ Limana Tahmini / Fiili Varış Tarihi:</label>
-        <input type="date" id="arrivalDateInput">
+      <div class="sheet-body">
+        <input type="hidden" id="arrivalCntId">
+        <div class="f"><label for="arrivalDateInput">Tahmini varış tarihi</label><input type="date" id="arrivalDateInput"></div>
+        <label class="check"><input type="checkbox" id="arrivalAtPort"> Konteyner limana ulaştı</label>
+        <button class="btn btn-primary btn-block" onclick="submitArrival()">Varışı kaydet</button>
       </div>
-      <div class="form-group">
-        <label>Konum Durumu:</label>
-        <select id="arrivalStatusSelect">
-          <option value="green">🟢 Yolda / Seyir Halinde</option>
-          <option value="red">🔴 Limana Ulaştı (Limanda)</option>
-        </select>
-      </div>
-      <button class="btn btn-indigo" style="width:100%; margin-top:5px;" onclick="submitArrival()">Tarihi Güncelle</button>
     </div>
   </div>
 
-  <!-- MODAL 4: DEPO TESLİM GİRİŞİ -->
+  <!-- Depo -->
   <div id="modalWarehouse" class="modal">
-    <div class="modal-content">
-      <div class="modal-head">
-        <span>🏢 Depo Teslim Girişi</span>
-        <button class="btn btn-gray" onclick="hideModal('modalWarehouse')">✕</button>
+    <div class="sheet narrow">
+      <div class="sheet-head">
+        <div><h3>Depoya teslim</h3><p class="sheet-sub" id="warehouseSub"></p></div>
+        <button class="icon-btn" onclick="hideModal('modalWarehouse')" aria-label="Kapat">✕</button>
       </div>
-      <input type="hidden" id="warehouseCntId">
-      <div class="row">
-        <div class="form-group">
-          <label>Depo Teslim Tarihi:</label>
-          <input type="date" id="whDateInput">
-        </div>
-        <div class="form-group">
-          <label>Teslim Edilen Depo:</label>
-          <select id="whNameSelect">
-            <option value="RÜYA">RÜYA</option>
-            <option value="KARAMAN">KARAMAN</option>
-            <option value="ACAR">ACAR</option>
-          </select>
+      <div class="sheet-body">
+        <input type="hidden" id="warehouseCntId">
+        <div class="f"><label for="whDateInput">Teslim tarihi <span class="req">*</span></label><input type="date" id="whDateInput"></div>
+        <div class="f"><label for="whNameSelect">Teslim alan depo</label><select id="whNameSelect"></select></div>
+        <button class="btn btn-primary btn-block" onclick="submitWarehouse()">Depoya teslimi kaydet</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Onay -->
+  <div id="modalConfirm" class="modal">
+    <div class="sheet narrow">
+      <div class="sheet-head"><div><h3 id="confirmTitle"></h3></div></div>
+      <div class="sheet-body">
+        <p id="confirmText" style="margin-bottom:16px; color:var(--ink-2);"></p>
+        <div style="display:flex; gap:8px;">
+          <button class="btn btn-ghost" style="flex:1;" onclick="resolveConfirm(false)">Vazgeç</button>
+          <button class="btn btn-primary" id="confirmOk" style="flex:1;" onclick="resolveConfirm(true)">Onayla</button>
         </div>
       </div>
-      <button class="btn btn-indigo" style="width:100%; margin-top:5px;" onclick="submitWarehouse()">Depoya Girişi Onayla (Maviye Geçir)</button>
+    </div>
+  </div>
+
+  <!-- PIN -->
+  <div id="modalPinAuth" class="modal">
+    <div class="sheet narrow">
+      <div class="sheet-head">
+        <div><h3>Kalıcı silme</h3><p class="sheet-sub">Devam etmek için PIN kodunu girin</p></div>
+        <button class="icon-btn" onclick="hideModal('modalPinAuth')" aria-label="Kapat">✕</button>
+      </div>
+      <div class="sheet-body">
+        <div class="f"><input type="password" id="inputPinCode" class="pin" placeholder="••••" maxlength="4" inputmode="numeric" autocomplete="off"></div>
+        <p id="pinErrorMsg" class="formerr" style="text-align:center;">PIN yanlış.</p>
+        <div style="display:flex; gap:8px;">
+          <button class="btn btn-ghost" style="flex:1;" onclick="hideModal('modalPinAuth')">Vazgeç</button>
+          <button class="btn btn-danger" style="flex:1;" onclick="validateAndExecutePin()">Kalıcı olarak sil</button>
+        </div>
+      </div>
     </div>
   </div>
 
