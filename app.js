@@ -7,6 +7,10 @@
 // =====================================================
 const WAREHOUSES = ["RÜYA", "KARAMAN", "ACAR"];          // depo listesi: buradan değiştirilir
 
+// Konteyner kapasitesi (ton): normal aralık ve mutlak üst sınır. Buradan değiştirilir.
+const CAPACITY = { min: 21, max: 24.5, hard: 25 };
+const DEFAULT_PLAN_TON = 22;   // siparişte konteynere yazılan hedef ton
+
 const STAGE_ORDER = ["white", "yellow", "green", "red", "blue"];
 const STAGE = {
   white:  { label: "Beklemede" },
@@ -86,7 +90,24 @@ function parseMoney(t) {
   const n = parseFloat(s);
   return isNaN(n) ? 0 : n;
 }
-function fmtMoney(n) { return n ? Math.round(n).toLocaleString("tr-TR") + " $" : "—"; }
+function fmtMoney(n) { return n ? Number(n).toLocaleString("tr-TR", { maximumFractionDigits: 2 }) + " $" : "—"; }
+function round2(n) { return Math.round(n * 100) / 100; }
+function fmtPriceVal(n) { return Number(n || 0).toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 4 }); }
+
+// Konteyner ağırlığının (kg) kapasiteye göre durumu
+function capState(kg) {
+  if (!kg) return null;
+  const t = kg / 1000;
+  if (t < CAPACITY.min) return { cls: "low", short: "Kapasite altı", text: "kapasite altı (en az " + fmtTonRaw(CAPACITY.min) + " t)" };
+  if (t <= CAPACITY.max) return { cls: "ok", short: "Normal", text: "normal aralıkta" };
+  if (t <= CAPACITY.hard) return { cls: "edge", short: "Üst sınırda", text: "üst sınırda (" + fmtTonRaw(CAPACITY.max) + " t üstü)" };
+  return { cls: "over", short: "Kapasite aşıldı", text: "kapasite aşıldı (en çok " + fmtTonRaw(CAPACITY.hard) + " t)" };
+}
+function capTag(c) {
+  if (stageOf(c) === "white") return "";
+  const cs = capState(bestKg(c));
+  return cs && cs.cls !== "ok" ? '<span class="cap cap-' + cs.cls + '">' + esc(cs.short) + "</span>" : "";
+}
 
 const ICONS = {
   search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',
@@ -225,7 +246,7 @@ function blankContainer(pf, idx, total, stamp) {
     id: "cnt_" + stamp + "_" + idx,
     pfId: pf.id, supplier: pf.supplier, pfNo: pf.no, pfDate: pf.date || "",
     order: idx + " / " + total, orderIndex: idx,
-    no: "", shippingLine: "", blNo: "", weightTon: 0, weightKg: 0, totalCost: "",
+    no: "", shippingLine: "", blNo: "", weightTon: 0, weightKg: 0, totalCost: "", unitPrice: 0, extraCost: 0, calcNote: "",
     orderDate: "", orderItems: [], loadedItems: [], details: "",
     status: "white", loadingDate: "", arrivalDate: "", warehouseDate: "", warehouseName: "",
     statusBeforeWarehouse: ""
@@ -353,6 +374,19 @@ function updateIncotermHelp() {
   $("pfIncotermHelp").textContent = v && INCOTERMS[v] ? INCOTERMS[v].hint : "";
 }
 
+function updatePfEstimate() {
+  const n = parseInt($("pfTotal").value, 10) || 0;
+  const plan = parseFloat($("pfPlanTon").value) || 0;
+  const price = parseFloat($("pfPriceKg").value) || 0;
+  const parts = [];
+  if (n && plan) parts.push(n + " konteyner × " + fmtTonRaw(plan) + " t = " + fmtTonRaw(n * plan) + " t");
+  if (n && plan && price) parts.push("tahmini " + fmtMoney(n * plan * 1000 * price));
+  let txt = parts.join(" → ");
+  const cs = capState(plan * 1000);
+  if (cs && cs.cls !== "ok") txt += (txt ? " · " : "") + "plan " + cs.text;
+  $("pfEstimate").textContent = txt;
+}
+
 function openProformaModal(pfId, presetSupplier) {
   if (!companies.length) {
     toast("Önce bir firma ekleyin.", "err");
@@ -379,8 +413,8 @@ function openProformaModal(pfId, presetSupplier) {
     $("pfDestPort").value = p.destPort || "";
     $("pfTotal").value = p.total;
     $("pfTotal").disabled = true;
-    $("pfPrice").value = p.price || "";
-    $("pfContractTon").value = p.contractTon || "";
+    $("pfPriceKg").value = p.pricePerKg || "";
+    $("pfPlanTon").value = p.planTon || DEFAULT_PLAN_TON;
     $("pfNote").value = p.note || "";
     $("pfSaveBtn").textContent = "Değişiklikleri kaydet";
   } else {
@@ -394,14 +428,15 @@ function openProformaModal(pfId, presetSupplier) {
     $("pfIncoterm").value = "";
     $("pfLoadPort").value = "";
     $("pfDestPort").value = "";
-    $("pfTotal").value = 4;
+    $("pfTotal").value = 3;
     $("pfTotal").disabled = false;
-    $("pfPrice").value = "";
-    $("pfContractTon").value = "";
+    $("pfPriceKg").value = "";
+    $("pfPlanTon").value = DEFAULT_PLAN_TON;
     $("pfNote").value = "";
     $("pfSaveBtn").textContent = "Proformayı kaydet";
   }
   updateIncotermHelp();
+  updatePfEstimate();
   showModal("modalProforma");
 }
 
@@ -413,8 +448,8 @@ function saveProforma() {
   const loadPort = $("pfLoadPort").value.trim();
   const destPort = $("pfDestPort").value.trim();
   const total = parseInt($("pfTotal").value, 10);
-  const price = $("pfPrice").value.trim();
-  const contractTon = parseFloat($("pfContractTon").value) || 0;
+  const pricePerKg = parseFloat($("pfPriceKg").value) || 0;
+  const planTon = parseFloat($("pfPlanTon").value) || DEFAULT_PLAN_TON;
   const note = $("pfNote").value.trim();
   const err = $("pfError");
 
@@ -429,7 +464,7 @@ function saveProforma() {
     const p = findPf(editingPfId);
     if (!p) return;
     const relabel = p.no !== no || (p.date || "") !== (date || "");
-    const patch = { no, date, incoterm, loadPort, destPort, price, contractTon, note };
+    const patch = { no, date, incoterm, loadPort, destPort, pricePerKg, planTon, note };
     Object.assign(p, patch);
     let changed = [];
     if (relabel) {
@@ -448,7 +483,7 @@ function saveProforma() {
   }
 
   const stamp = Date.now();
-  const pf = { id: "pf_" + stamp, supplier, no, date, incoterm, loadPort, destPort, total, price, contractTon, note, isArchived: false, timestamp: stamp };
+  const pf = { id: "pf_" + stamp, supplier, no, date, incoterm, loadPort, destPort, total, pricePerKg, planTon, note, isArchived: false, timestamp: stamp };
   const list = [];
   for (let i = 1; i <= total; i++) list.push(blankContainer(pf, i, total, stamp));
 
@@ -569,14 +604,22 @@ function addOrderRow(code, ton) {
   updateOrderTotal();
 }
 function addLoadedRow(code, kg) {
-  $("loadedItemsContainer").appendChild(buildYarnRow("loaded-code-input", "loaded-kg-input", "Kg", "1", code, kg, () => { syncAutoWeight(); updateWeightCheck(); }));
+  $("loadedItemsContainer").appendChild(buildYarnRow("loaded-code-input", "loaded-kg-input", "Kg", "1", code, kg, () => { syncAutoWeight(); refreshStatusCalc(); }));
   updateWeightCheck();
 }
 
 function updateOrderTotal() {
   let tons = 0;
   document.querySelectorAll("#orderItemsContainer .order-ton-input").forEach(i => { tons += parseFloat(i.value) || 0; });
-  $("orderTotalInfo").textContent = "Toplam: " + fmtTonRaw(tons) + " ton";
+  const c = findC($("orderCntId").value);
+  const pf = c && findPf(c.pfId);
+  const plan = (pf && pf.planTon) || DEFAULT_PLAN_TON;
+  const cs = capState(tons * 1000);
+  const el = $("orderTotalInfo");
+  el.textContent = "Toplam: " + fmtTonRaw(tons) + " ton" + (cs ? " · " + cs.text : "");
+  el.className = "total-line" + (cs ? " cap-" + cs.cls : "");
+  $("orderTarget").textContent = "Hedef " + fmtTonRaw(plan) + " t · kapasite " + fmtTonRaw(CAPACITY.min) + " – " + fmtTonRaw(CAPACITY.max) + " t (en çok " + fmtTonRaw(CAPACITY.hard) + " t)";
+  if (pf && pf.pricePerKg && tons) $("orderTarget").textContent += " · tahmini " + fmtMoney(tons * 1000 * pf.pricePerKg);
 }
 function loadedSum() {
   let s = 0;
@@ -591,7 +634,13 @@ function syncAutoWeight() {
 function updateWeightCheck() {
   const sum = loadedSum();
   const total = parseFloat($("statusWeightKg").value) || 0;
+  const cap = $("capCheck");
   const el = $("weightCheck");
+  const cs = capState(total || sum);
+  if (cs) {
+    cap.className = "wcheck " + (cs.cls === "ok" ? "ok" : cs.cls === "over" ? "bad" : "warn");
+    cap.textContent = "Konteyner ağırlığı " + fmtTonRaw((total || sum) / 1000) + " t: " + cs.text + ".";
+  } else { cap.className = "wcheck"; cap.textContent = ""; }
   if (!sum && !total) { el.className = "wcheck"; el.textContent = ""; return; }
   const diff = total - sum;
   if (Math.abs(diff) < 0.5) {
@@ -603,14 +652,52 @@ function updateWeightCheck() {
   }
 }
 
+// ---- Hesap bölümü: kilo x birim fiyat = tutar ----
+function calcNums() {
+  const kg = parseFloat($("statusWeightKg").value) || 0;
+  const unit = parseFloat($("statusUnitPrice").value) || 0;
+  return { kg, unit, invoice: parseMoney($("statusTotalCost").value), extra: parseFloat($("statusExtraCost").value) || 0, calc: kg && unit ? round2(kg * unit) : 0 };
+}
+function syncAutoCost() {
+  const f = $("statusTotalCost");
+  if (f.dataset.manual === "1") return;
+  const n = calcNums();
+  f.value = n.calc ? String(n.calc) : "";
+}
+function updateCalc() {
+  const n = calcNums();
+  const rows = [];
+  if (n.calc) rows.push(["Hesaplanan tutar", fmtNum(n.kg) + " kg × " + fmtPriceVal(n.unit) + " = " + fmtMoney(n.calc), ""]);
+  if (n.calc && n.invoice) {
+    const d = round2(n.invoice - n.calc);
+    rows.push(["Fatura farkı", Math.abs(d) < 0.5 ? "yok" : (d > 0 ? "+" : "−") + fmtMoney(Math.abs(d)), Math.abs(d) < 0.5 ? "good" : "bad"]);
+  }
+  if (n.invoice && n.extra) rows.push(["Toplam maliyet (fatura + ek masraf)", fmtMoney(n.invoice + n.extra), "strong"]);
+  if (n.invoice && n.kg) rows.push(["Kilo başına maliyet", fmtPriceVal((n.invoice + n.extra) / n.kg) + " $/kg", "strong"]);
+  const c = findC($("statusCntId").value);
+  const planKg = c ? orderKg(c) : 0;
+  if (planKg && n.kg) {
+    const d = n.kg - planKg;
+    rows.push(["Plana göre", fmtTonRaw(n.kg / 1000) + " t, plan " + fmtTonRaw(planKg / 1000) + " t (" + (d >= 0 ? "+" : "−") + fmtTonRaw(Math.abs(d) / 1000) + " t)", ""]);
+  }
+  $("calcSummary").innerHTML = rows.map(r => '<div class="calc-row' + (r[2] ? " " + r[2] : "") + '"><span>' + esc(r[0]) + "</span><b>" + esc(r[1]) + "</b></div>").join("");
+}
+function refreshStatusCalc() { syncAutoCost(); updateWeightCheck(); updateCalc(); }
+
 document.addEventListener("input", e => {
   const t = e.target;
-  if (t.id === "statusWeightKg") { t.dataset.manual = "1"; updateWeightCheck(); }
-  else if (t.matches && t.matches(".loaded-kg-input")) { syncAutoWeight(); updateWeightCheck(); }
+  if (t.id === "statusWeightKg") { t.dataset.manual = t.value ? "1" : ""; refreshStatusCalc(); }
+  else if (t.id === "statusTotalCost") { t.dataset.manual = t.value.trim() ? "1" : ""; updateCalc(); }
+  else if (t.id === "statusUnitPrice" || t.id === "statusExtraCost") refreshStatusCalc();
+  else if (t.id === "pfTotal" || t.id === "pfPlanTon" || t.id === "pfPriceKg") updatePfEstimate();
+  else if (t.matches && t.matches(".loaded-kg-input")) { syncAutoWeight(); refreshStatusCalc(); }
   else if (t.matches && t.matches(".order-ton-input")) updateOrderTotal();
   else if (t.id === "pfIncoterm") updateIncotermHelp();
 });
-document.addEventListener("change", e => { if (e.target.id === "pfIncoterm") updateIncotermHelp(); });
+document.addEventListener("change", e => {
+  if (e.target.id === "pfIncoterm") updateIncotermHelp();
+  if (e.target.id === "statusTotalCost" && !e.target.value.trim()) { e.target.dataset.manual = ""; refreshStatusCalc(); }
+});
 
 function openOrderModal(id) {
   const c = findC(id);
@@ -620,11 +707,11 @@ function openOrderModal(id) {
   $("orderDateInput").value = c.orderDate || todayISO();
   $("orderItemsContainer").innerHTML = "";
   if (c.orderItems && c.orderItems.length) c.orderItems.forEach(it => addOrderRow(it.code, it.ton));
-  else addOrderRow("", "");
+  else { const pf0 = findPf(c.pfId); addOrderRow("", (pf0 && pf0.planTon) || DEFAULT_PLAN_TON); }
   showModal("modalOrder");
 }
 
-function submitOrder() {
+async function submitOrder() {
   const id = $("orderCntId").value;
   const orderDate = $("orderDateInput").value;
   const items = [];
@@ -635,6 +722,11 @@ function submitOrder() {
     if (code) { items.push({ code, ton }); totalTon += ton; }
   });
   if (!items.length) { toast("En az bir iplik / renk kodu girin.", "err"); return; }
+  const cs = capState(totalTon * 1000);
+  if (cs && (cs.cls === "over" || cs.cls === "low")) {
+    const ok = await askConfirm({ title: "Kapasite dışı", text: "Toplam " + fmtTonRaw(totalTon) + " ton: " + cs.text + ". Yine de kaydedilsin mi?", okText: "Yine de kaydet" });
+    if (!ok) return;
+  }
 
   const c = findC(id);
   if (!c) return;
@@ -649,6 +741,7 @@ function submitOrder() {
 function openStatusModal(id) {
   const c = findC(id);
   if (!c) return;
+  const pf = findPf(c.pfId);
   const first = stageOf(c) === "yellow" || stageOf(c) === "white";
   $("statusCntId").value = c.id;
   $("statusSub").textContent = cntLabel(c);
@@ -656,7 +749,10 @@ function openStatusModal(id) {
   $("statusLoadingDate").value = c.loadingDate || todayISO();
   $("statusShippingLine").value = c.shippingLine || "";
   $("statusBl").value = c.blNo || "";
-  $("statusTotalCost").value = c.totalCost || "";
+  $("statusUnitPrice").value = c.unitPrice || (pf && pf.pricePerKg) || "";
+  $("statusExtraCost").value = c.extraCost || "";
+  $("statusCalcNote").value = c.calcNote || "";
+  $("statusTotalCost").value = c.totalCost ? String(parseMoney(c.totalCost)) : "";
   $("statusErrorText").style.display = "none";
   $("statusSaveBtn").textContent = first ? "Yüklemeyi kaydet" : "Değişiklikleri kaydet";
 
@@ -668,7 +764,12 @@ function openStatusModal(id) {
   else if (c.orderItems && c.orderItems.length) c.orderItems.forEach(it => addLoadedRow(it.code, Math.round(it.ton * 1000)));
   else addLoadedRow("", "");
   syncAutoWeight();
-  updateWeightCheck();
+  // Kayıtlı fatura tutarı hesaplananla aynı değilse elle girilmiş sayılır
+  const kg = parseFloat(w.value) || 0;
+  const unit = parseFloat($("statusUnitPrice").value) || 0;
+  const saved = parseMoney(c.totalCost);
+  $("statusTotalCost").dataset.manual = saved && !(unit && kg && Math.abs(saved - round2(kg * unit)) < 0.5) ? "1" : "";
+  refreshStatusCalc();
   showModal("modalStatus");
 }
 
@@ -679,10 +780,13 @@ async function submitStatus() {
   const shippingLine = $("statusShippingLine").value.trim().toUpperCase();
   const blNo = $("statusBl").value.trim().toUpperCase();
   const weightKg = parseFloat($("statusWeightKg").value) || 0;
-  const totalCost = $("statusTotalCost").value.trim();
+  const unitPrice = parseFloat($("statusUnitPrice").value) || 0;
+  const extraCost = parseFloat($("statusExtraCost").value) || 0;
+  const calcNote = $("statusCalcNote").value.trim();
+  const invoice = parseMoney($("statusTotalCost").value);
   const errEl = $("statusErrorText");
 
-  if (!no || !loadingDate || !shippingLine || !weightKg || !totalCost) { errEl.style.display = "block"; return; }
+  if (!no || !loadingDate || !shippingLine || !weightKg || !invoice) { errEl.style.display = "block"; return; }
   errEl.style.display = "none";
 
   const loadedItems = [];
@@ -693,18 +797,20 @@ async function submitStatus() {
     if (code) { loadedItems.push({ code, kg }); sum += kg; }
   });
 
+  const msgs = [];
   if (loadedItems.length && Math.abs(sum - weightKg) >= 0.5) {
-    const ok = await askConfirm({
-      title: "Kilolar tutmuyor",
-      text: "Kalemler " + fmtNum(sum) + " kg, toplam net kilo " + fmtNum(weightKg) + " kg. Fark " + fmtNum(Math.abs(weightKg - sum)) + " kg. Yine de kaydedilsin mi?",
-      okText: "Yine de kaydet"
-    });
+    msgs.push("Kalemler " + fmtNum(sum) + " kg, toplam net kilo " + fmtNum(weightKg) + " kg (fark " + fmtNum(Math.abs(weightKg - sum)) + " kg).");
+  }
+  const cs = capState(weightKg);
+  if (cs && (cs.cls === "over" || cs.cls === "low")) msgs.push("Toplam " + fmtTonRaw(weightKg / 1000) + " t: " + cs.text + ".");
+  if (msgs.length) {
+    const ok = await askConfirm({ title: "Kontrol edin", text: msgs.join(" ") + " Yine de kaydedilsin mi?", okText: "Yine de kaydet" });
     if (!ok) return;
   }
 
   const c = findC(id);
   if (!c) return;
-  const patch = { no, loadingDate, shippingLine, blNo, weightKg, totalCost, loadedItems };
+  const patch = { no, loadingDate, shippingLine, blNo, weightKg, totalCost: String(round2(invoice)), unitPrice, extraCost, calcNote, loadedItems };
   // Sadece ilk yüklemede yeşile geçer; düzenleme mevcut aşamayı bozmaz
   if (stageOf(c) === "yellow" || stageOf(c) === "white") patch.status = "green";
   updateContainer(id, patch);
@@ -792,12 +898,17 @@ function activeContainers() {
 }
 
 function pfStats(pf, list) {
-  const s = { count: list.length, white: 0, yellow: 0, green: 0, red: 0, blue: 0, orderedKg: 0, loadedKg: 0, deliveredKg: 0, money: 0 };
+  const s = { count: list.length, white: 0, yellow: 0, green: 0, red: 0, blue: 0, orderedKg: 0, loadedKg: 0, deliveredKg: 0, money: 0, extra: 0, costKg: 0, estMoney: 0 };
   list.forEach(c => {
     const st = stageOf(c);
     s[st]++;
     if (st !== "white") s.orderedKg += orderKg(c) || (c.weightKg || 0);
-    if (st === "green" || st === "red" || st === "blue") { s.loadedKg += bestKg(c); s.money += parseMoney(c.totalCost); }
+    if (st === "green" || st === "red" || st === "blue") {
+      s.loadedKg += bestKg(c);
+      const m = parseMoney(c.totalCost);
+      if (m) { s.money += m; s.extra += Number(c.extraCost) || 0; s.costKg += bestKg(c); }
+    }
+    if (st === "yellow" && pf && pf.pricePerKg) s.estMoney += orderKg(c) * pf.pricePerKg;
     if (st === "blue") s.deliveredKg += bestKg(c);
   });
   return s;
@@ -860,7 +971,7 @@ function renderRow(c, archived) {
   const top = '<span class="stchip">' + STAGE[st].label + "</span>" +
     (c.no ? '<span class="cno">' + esc(c.no) + "</span>" : '<span class="cno cno-empty">' + (st === "white" ? "Detay bekleniyor" : "Konteyner no girilmedi") + "</span>") +
     (c.shippingLine ? '<span class="tag">' + ic("ship") + esc(c.shippingLine) + "</span>" : "") +
-    (c.blNo ? '<span class="tag">B/L ' + esc(c.blNo) + "</span>" : "");
+    (c.blNo ? '<span class="tag">B/L ' + esc(c.blNo) + "</span>" : "") + capTag(c);
 
   let items = "";
   const loaded = st === "green" || st === "red" || st === "blue";
@@ -873,7 +984,9 @@ function renderRow(c, archived) {
   let meta = "";
   const kg = bestKg(c);
   if (kg) meta += '<div class="num">' + (st === "white" || st === "yellow" ? fmtTon(kg) : fmtNum(kg) + " kg") + '</div><div class="numl">' + (st === "white" || st === "yellow" ? "sipariş" : "net ağırlık") + "</div>";
-  if (loaded && c.totalCost) meta += '<div class="cost">' + esc(c.totalCost) + "</div>";
+  if (loaded && c.totalCost) meta += '<div class="cost">' + esc(fmtMoney(parseMoney(c.totalCost))) + (c.unitPrice ? '<span class="unit"> · ' + esc(fmtPriceVal(c.unitPrice)) + " $/kg</span>" : "") + "</div>";
+  const pfx = findPf(c.pfId);
+  if (st === "yellow" && pfx && pfx.pricePerKg && kg) meta += '<div class="est">≈ ' + esc(fmtMoney(kg * pfx.pricePerKg)) + " tahmini</div>";
 
   let actions = "";
   if (!archived) {
@@ -921,10 +1034,12 @@ function renderPfCard(pf, opt) {
   if (pf.date) meta.push("<span>" + ic("calendar") + esc(fmtDate(pf.date)) + "</span>");
   if (pf.loadPort || pf.destPort) meta.push("<span>" + ic("ship") + esc(pf.loadPort || "?") + ic("arrow") + esc(pf.destPort || "?") + "</span>");
   if (inc) meta.push("<span>" + esc(inc.freight) + "</span>");
+  if (pf.planTon) meta.push("<span>Plan: " + fmtTonRaw(pf.planTon) + " t / konteyner</span>");
 
   const done = s.count > 0 && s.blue === s.count;
   let right = "";
-  if (pf.price) right += '<span class="pf-price">' + esc(pf.price) + "</span>";
+  if (pf.pricePerKg) right += '<span class="pf-price">' + fmtPriceVal(pf.pricePerKg) + " $/kg</span>";
+  else if (pf.price) right += '<span class="pf-price">' + esc(pf.price) + "</span>";
   if (archived) {
     right += '<button class="btn btn-ghost btn-sm" data-action="restore" data-id="' + esc(pf.id) + '">' + ic("undo") + "Panoya al</button>" +
              '<button class="btn btn-ghost btn-sm" data-action="deleteProforma" data-id="' + esc(pf.id) + '">' + ic("trash") + "Kalıcı sil</button>";
@@ -940,16 +1055,10 @@ function renderPfCard(pf, opt) {
   if (s.loadedKg) stats.push(["Yüklenen", fmtTon(s.loadedKg)]);
   if (s.deliveredKg) stats.push(["Depoya girişi", fmtTon(s.deliveredKg)]);
   if (s.money) stats.push(["Yüklenen tutar", fmtMoney(s.money)]);
+  if (s.estMoney) stats.push(["Siparişteki tahmini", fmtMoney(s.estMoney)]);
+  if (s.money && s.costKg) stats.push(["Ort. maliyet", fmtPriceVal((s.money + s.extra) / s.costKg) + " $/kg"]);
 
-  let contract = "";
-  if (pf.contractTon > 0) {
-    const ord = s.orderedKg / 1000;
-    const pct = Math.min(100, Math.round(ord / pf.contractTon * 100));
-    const rest = pf.contractTon - ord;
-    contract = '<div class="contract"><b>Sözleşme ' + fmtTonRaw(pf.contractTon) + " t</b>, sipariş edilen " + fmtTonRaw(ord) + " t, " +
-      (rest >= 0 ? "kalan " + fmtTonRaw(rest) + " t" : fmtTonRaw(-rest) + " t aşıldı") +
-      '<div class="meter' + (rest < 0 ? " over" : "") + '"><i style="width:' + pct + '%"></i></div></div>';
-  }
+  const contract = "";
 
   // Satırlar
   let rows = "";
@@ -1242,7 +1351,11 @@ async function exportDetailedExcel() {
     { header: "Durum", key: "status", width: 14 },
     { header: "Masa", key: "desk", width: 13 },
     { header: "Net ağırlık (kg)", key: "kg", width: 16 },
-    { header: "Toplam tutar ($)", key: "cost", width: 16 },
+    { header: "Fatura tutarı ($)", key: "cost", width: 16 },
+    { header: "Birim fiyat ($/kg)", key: "unit", width: 14 },
+    { header: "Ek masraf ($)", key: "extra", width: 14 },
+    { header: "Toplam maliyet ($)", key: "landed", width: 16 },
+    { header: "Maliyet ($/kg)", key: "perkg", width: 14 },
     { header: "Sipariş tarihi", key: "orderDate", width: 14 },
     { header: "Yükleme tarihi", key: "loadDate", width: 14 },
     { header: "Tahmini varış", key: "arrival", width: 14 },
@@ -1259,7 +1372,7 @@ async function exportDetailedExcel() {
     cell.border = border;
   });
 
-  let totalKg = 0, ordered = 0, onTheWay = 0, delivered = 0;
+  let totalKg = 0, ordered = 0, onTheWay = 0, delivered = 0, totalInvoice = 0, totalExtra = 0;
   const bySupplier = {};
 
   rows.forEach(c => {
@@ -1280,12 +1393,15 @@ async function exportDetailedExcel() {
     if (loaded && c.loadedItems && c.loadedItems.length) items = c.loadedItems.map(i => i.code + ": " + fmtNum(i.kg) + " kg").join(" | ");
     else if (c.orderItems && c.orderItems.length) items = c.orderItems.map(i => i.code + ": " + fmtTonRaw(i.ton) + " t").join(" | ");
 
+    const invoice = parseMoney(c.totalCost), extra = Number(c.extraCost) || 0;
+    totalInvoice += invoice; totalExtra += extra;
+    const kgForCost = c.weightKg || kg;
     const row = ws.addRow({
       supplier: c.supplier || "", pfNo: c.pfNo || "", pfDate: fmtDate(c.pfDate), inc: pf.incoterm || "—",
       lp: pf.loadPort || "—", dp: pf.destPort || "—", order: c.order || "",
       no: c.no || "—", line: c.shippingLine || "—", bl: c.blNo || "—",
       status: STAGE[st].label, desk: pf.isArchived ? "Arşivde" : "Aktif",
-      kg: kg || null, cost: c.totalCost || "—",
+      kg: kg || null, cost: invoice || null, unit: c.unitPrice || null, extra: extra || null, landed: invoice ? invoice + extra : null, perkg: invoice && kgForCost ? Math.round((invoice + extra) / kgForCost * 10000) / 10000 : null,
       orderDate: fmtDate(c.orderDate) || "—", loadDate: fmtDate(c.loadingDate) || "—",
       arrival: fmtDate(c.arrivalDate) || "—", whDate: fmtDate(c.warehouseDate) || "—",
       whName: c.warehouseName || "—", items
@@ -1296,9 +1412,10 @@ async function exportDetailedExcel() {
     row.getCell("status").font = { bold: true };
     row.getCell("kg").numFmt = "#,##0";
     row.getCell("kg").alignment = { vertical: "middle", horizontal: "right" };
-    row.getCell("cost").alignment = { vertical: "middle", horizontal: "right" };
+    ["cost", "extra", "landed"].forEach(k => { row.getCell(k).numFmt = "#,##0.00"; row.getCell(k).alignment = { vertical: "middle", horizontal: "right" }; });
+    ["unit", "perkg"].forEach(k => { row.getCell(k).numFmt = "0.0000"; row.getCell(k).alignment = { vertical: "middle", horizontal: "right" }; });
   });
-  ws.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: 20 } };
+  ws.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: 24 } };
 
   const sm = wb.addWorksheet("Özet");
   sm.columns = [{ width: 38 }, { width: 26 }, { width: 18 }];
@@ -1310,7 +1427,9 @@ async function exportDetailedExcel() {
     ["Siparişte (yüklenmemiş)", ordered + " konteyner", "FFF2CC"],
     ["Yolda veya limanda", onTheWay + " konteyner", "D9F3E5"],
     ["Depoya teslim edilen", delivered + " konteyner", "DCE8FB"],
-    ["Toplam ağırlık", fmtNum(totalKg) + " kg (" + (totalKg / 1000).toFixed(2) + " ton)", "FFF2CC"]
+    ["Toplam ağırlık", fmtNum(totalKg) + " kg (" + (totalKg / 1000).toFixed(2) + " ton)", "FFF2CC"],
+    ["Toplam fatura tutarı", fmtMoney(totalInvoice), "DCE8FB"],
+    ["Toplam maliyet (fatura + ek masraf)", fmtMoney(totalInvoice + totalExtra), "DCE8FB"]
   ].forEach(l => {
     const r = sm.addRow([l[0], l[1]]);
     r.eachCell(cell => { cell.fill = fill(l[2]); cell.border = border; });
