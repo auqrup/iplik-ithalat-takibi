@@ -13,7 +13,7 @@ const DEFAULT_PLAN_TON = 22;   // siparişte konteynere yazılan hedef ton
 
 const STAGE_ORDER = ["white", "yellow", "green", "red", "blue"];
 const STAGE = {
-  white:  { label: "Beklemede" },
+  white:  { label: "Sipariş bekleyen" },
   yellow: { label: "Siparişte" },
   green:  { label: "Yolda" },
   red:    { label: "Limanda" },
@@ -216,6 +216,10 @@ const ui = { tab: "active", company: "all", stage: "all", q: "", expanded: new S
 function pfTime(p) {
   return p.timestamp || (p.createdAt && p.createdAt.seconds ? p.createdAt.seconds * 1000 : 0) || parseInt(String(p.id).replace("pf_", ""), 10) || 0;
 }
+// Proformalar tarihe göre: en eski üstte, en yeni altta
+function pfOrder(a, b) {
+  return String(a.date || "9999-99-99").localeCompare(String(b.date || "9999-99-99")) || (pfTime(a) - pfTime(b));
+}
 function stageOf(c) { return STAGE[c.status] ? c.status : "white"; }
 function stagePriority(st) { return { white: 1, yellow: 1, green: 2, red: 3, blue: 4 }[st] || 1; }
 function cntSort(a, b) {
@@ -228,6 +232,9 @@ const findC = id => containers.find(c => c.id === id);
 const findPf = id => proformas.find(p => p.id === id);
 
 function orderKg(c) { return c.weightTon ? Math.round(c.weightTon * 1000) : 0; }
+// Birim fiyat proformadan gelir; tutar = net kilo x birim fiyat (elle girilmez)
+function unitOf(c) { const pf = findPf(c.pfId); return (pf && Number(pf.pricePerKg)) || Number(c.unitPrice) || 0; }
+function costOf(c) { const kg = Number(c.weightKg) || 0, u = unitOf(c); return kg && u ? round2(kg * u) : parseMoney(c.totalCost); }
 function cartonsOf(c) { return (c.loadedItems || []).reduce((a, it) => a + (Number(it.cartons) || 0), 0); }
 function docLabel(c) { const d = c.docsStatus || "pending"; return d === "received" ? "Tamam" : d === "partial" ? "Eksik" : "Bekleniyor"; }
 function bestKg(c) {
@@ -684,25 +691,16 @@ function updateWeightCheck() {
 // ---- Hesap bölümü: kilo x birim fiyat = tutar ----
 function calcNums() {
   const kg = parseFloat($("statusWeightKg").value) || 0;
-  const unit = parseFloat($("statusUnitPrice").value) || 0;
-  return { kg, unit, invoice: parseMoney($("statusTotalCost").value), extra: parseFloat($("statusExtraCost").value) || 0, calc: kg && unit ? round2(kg * unit) : 0 };
-}
-function syncAutoCost() {
-  const f = $("statusTotalCost");
-  if (f.dataset.manual === "1") return;
-  const n = calcNums();
-  f.value = n.calc ? String(n.calc) : "";
+  const c = findC($("statusCntId").value);
+  const unit = c ? unitOf(c) : 0;
+  return { kg, unit, extra: parseFloat($("statusExtraCost").value) || 0, calc: kg && unit ? round2(kg * unit) : 0 };
 }
 function updateCalc() {
   const n = calcNums();
   const rows = [];
-  if (n.calc) rows.push(["Hesaplanan tutar", fmtNum(n.kg) + " kg × " + fmtPriceVal(n.unit) + " = " + fmtMoney(n.calc), ""]);
-  if (n.calc && n.invoice) {
-    const d = round2(n.invoice - n.calc);
-    rows.push(["Fatura farkı", Math.abs(d) < 0.5 ? "yok" : (d > 0 ? "+" : "−") + fmtMoney(Math.abs(d)), Math.abs(d) < 0.5 ? "good" : "bad"]);
-  }
-  if (n.invoice && n.extra) rows.push(["Toplam maliyet (fatura + ek masraf)", fmtMoney(n.invoice + n.extra), "strong"]);
-  if (n.invoice && n.kg) rows.push(["Kilo başına maliyet", fmtPriceVal((n.invoice + n.extra) / n.kg) + " $/kg", "strong"]);
+  if (n.unit) rows.push(["Kilo fiyatı (proformadan)", fmtPriceVal(n.unit) + " $/kg", ""]);
+  else rows.push(["Kilo fiyatı", "proformada girilmemiş", "bad"]);
+  if (n.calc) rows.push(["Hesap", fmtNum(n.kg) + " kg × " + fmtPriceVal(n.unit) + " $", ""]);
   const c = findC($("statusCntId").value);
   const planKg = c ? orderKg(c) : 0;
   if (planKg && n.kg) {
@@ -712,15 +710,20 @@ function updateCalc() {
   let ctn = 0;
   document.querySelectorAll("#loadedItemsContainer .loaded-ctn-input").forEach(i => { ctn += parseFloat(i.value) || 0; });
   if (ctn) rows.push(["Toplam karton", fmtNum(ctn) + (n.kg ? " (ort. " + fmtNum(Math.round(n.kg / ctn * 100) / 100) + " kg/karton)" : ""), ""]);
+  if (n.calc && n.extra) {
+    rows.push(["Ek masraf", fmtMoney(n.extra), ""]);
+    rows.push(["Toplam maliyet (ek masraf dahil)", fmtMoney(n.calc + n.extra), "strong"]);
+    rows.push(["Kilo başına maliyet", fmtPriceVal((n.calc + n.extra) / n.kg) + " $/kg", "strong"]);
+  }
+  rows.push(["Toplam tutar", n.calc ? fmtMoney(n.calc) : "—", "total"]);
   $("calcSummary").innerHTML = rows.map(r => '<div class="calc-row' + (r[2] ? " " + r[2] : "") + '"><span>' + esc(r[0]) + "</span><b>" + esc(r[1]) + "</b></div>").join("");
 }
-function refreshStatusCalc() { syncAutoCost(); updateWeightCheck(); updateCalc(); }
+function refreshStatusCalc() { updateWeightCheck(); updateCalc(); }
 
 document.addEventListener("input", e => {
   const t = e.target;
   if (t.id === "statusWeightKg") { t.dataset.manual = t.value ? "1" : ""; refreshStatusCalc(); }
-  else if (t.id === "statusTotalCost") { t.dataset.manual = t.value.trim() ? "1" : ""; updateCalc(); }
-  else if (t.id === "statusUnitPrice" || t.id === "statusExtraCost") refreshStatusCalc();
+  else if (t.id === "statusExtraCost") refreshStatusCalc();
   else if (t.id === "pfTotal" || t.id === "pfPlanTon" || t.id === "pfPriceKg") updatePfEstimate();
   else if (t.matches && t.matches(".loaded-kg-input")) { syncAutoWeight(); refreshStatusCalc(); }
   else if (t.matches && t.matches(".loaded-ctn-input")) updateCalc();
@@ -730,7 +733,6 @@ document.addEventListener("input", e => {
 document.addEventListener("change", e => {
   if (e.target.id === "pfIncoterm") updateIncotermHelp();
   if (e.target.id === "docsStatus") { const d = $("docsDate"); if (e.target.value === "pending") d.value = ""; else if (!d.value) d.value = todayISO(); }
-  if (e.target.id === "statusTotalCost" && !e.target.value.trim()) { e.target.dataset.manual = ""; refreshStatusCalc(); }
 });
 
 function openOrderModal(id) {
@@ -775,7 +777,6 @@ async function submitOrder() {
 function openStatusModal(id) {
   const c = findC(id);
   if (!c) return;
-  const pf = findPf(c.pfId);
   const first = stageOf(c) === "yellow" || stageOf(c) === "white";
   $("statusCntId").value = c.id;
   $("statusSub").textContent = cntLabel(c);
@@ -784,10 +785,8 @@ function openStatusModal(id) {
   $("statusShippingLine").value = c.shippingLine || "";
   $("statusBl").value = c.blNo || "";
   $("statusArrivalDate").value = c.arrivalDate || "";
-  $("statusUnitPrice").value = c.unitPrice || (pf && pf.pricePerKg) || "";
   $("statusExtraCost").value = c.extraCost || "";
   $("statusCalcNote").value = c.calcNote || "";
-  $("statusTotalCost").value = c.totalCost ? String(parseMoney(c.totalCost)) : "";
   $("statusErrorText").style.display = "none";
   $("statusSaveBtn").textContent = first ? "Yüklemeyi kaydet" : "Değişiklikleri kaydet";
 
@@ -799,11 +798,6 @@ function openStatusModal(id) {
   else if (c.orderItems && c.orderItems.length) c.orderItems.forEach(it => addLoadedRow(it.code, Math.round(it.ton * 1000)));
   else addLoadedRow("", "");
   syncAutoWeight();
-  // Kayıtlı fatura tutarı hesaplananla aynı değilse elle girilmiş sayılır
-  const kg = parseFloat(w.value) || 0;
-  const unit = parseFloat($("statusUnitPrice").value) || 0;
-  const saved = parseMoney(c.totalCost);
-  $("statusTotalCost").dataset.manual = saved && !(unit && kg && Math.abs(saved - round2(kg * unit)) < 0.5) ? "1" : "";
   refreshStatusCalc();
   showModal("modalStatus");
 }
@@ -815,25 +809,23 @@ async function submitStatus() {
   const shippingLine = $("statusShippingLine").value.trim().toUpperCase();
   const blNo = $("statusBl").value.trim().toUpperCase();
   const weightKg = parseFloat($("statusWeightKg").value) || 0;
-  const unitPrice = parseFloat($("statusUnitPrice").value) || 0;
   const extraCost = parseFloat($("statusExtraCost").value) || 0;
   const calcNote = $("statusCalcNote").value.trim();
   const arrivalDate = $("statusArrivalDate").value;
-  const invoice = parseMoney($("statusTotalCost").value);
+  const n = calcNums();
   const errEl = $("statusErrorText");
 
-  if (!no || !loadingDate || !shippingLine || !weightKg || !invoice) { errEl.textContent = "Kırmızı yıldızlı alanların hepsini doldurun."; errEl.style.display = "block"; return; }
+  if (!no || !loadingDate || !shippingLine || !weightKg) { errEl.textContent = "Kırmızı yıldızlı alanların hepsini doldurun."; errEl.style.display = "block"; return; }
   errEl.style.display = "none";
 
   const loadedItems = [];
-  let sum = 0, missingCtn = false;
+  let sum = 0;
   document.querySelectorAll("#loadedItemsContainer .yarn-row").forEach(row => {
     const code = row.querySelector(".loaded-code-input").value.trim().toUpperCase();
     const kg = parseFloat(row.querySelector(".loaded-kg-input").value) || 0;
     const cartons = parseInt(row.querySelector(".loaded-ctn-input").value, 10) || 0;
-    if (code) { loadedItems.push({ code, kg, cartons }); sum += kg; if (!cartons) missingCtn = true; }
+    if (code) { loadedItems.push({ code, kg, cartons }); sum += kg; }
   });
-  if (missingCtn) { errEl.textContent = "Her iplik kalemi için karton adedini yazın."; errEl.style.display = "block"; return; }
 
   const msgs = [];
   if (loadedItems.length && Math.abs(sum - weightKg) >= 0.5) {
@@ -841,6 +833,7 @@ async function submitStatus() {
   }
   const cs = capState(weightKg);
   if (cs && (cs.cls === "over" || cs.cls === "low")) msgs.push("Toplam " + fmtTonRaw(weightKg / 1000) + " t: " + cs.text + ".");
+  if (!n.unit) msgs.push("Proformada kilo fiyatı yok, tutar hesaplanamadı.");
   if (msgs.length) {
     const ok = await askConfirm({ title: "Kontrol edin", text: msgs.join(" ") + " Yine de kaydedilsin mi?", okText: "Yine de kaydet" });
     if (!ok) return;
@@ -848,7 +841,7 @@ async function submitStatus() {
 
   const c = findC(id);
   if (!c) return;
-  const patch = { no, loadingDate, shippingLine, blNo, weightKg, totalCost: String(round2(invoice)), unitPrice, extraCost, calcNote, arrivalDate, loadedItems };
+  const patch = { no, loadingDate, shippingLine, blNo, weightKg, totalCost: n.calc ? String(n.calc) : "", unitPrice: n.unit, extraCost, calcNote, arrivalDate, loadedItems };
   // Sadece ilk yüklemede yeşile geçer; düzenleme mevcut aşamayı bozmaz
   if (stageOf(c) === "yellow" || stageOf(c) === "white") patch.status = "green";
   updateContainer(id, patch);
@@ -967,7 +960,7 @@ function pfStats(pf, list) {
     if (st === "green" || st === "red" || st === "blue") {
       s.loadedKg += bestKg(c);
       s.cartons += cartonsOf(c);
-      const m = parseMoney(c.totalCost);
+      const m = costOf(c);
       if (m) { s.money += m; s.extra += Number(c.extraCost) || 0; s.costKg += bestKg(c); }
     }
     if (st === "yellow" && pf && pf.pricePerKg) s.estMoney += orderKg(c) * pf.pricePerKg;
@@ -1059,7 +1052,8 @@ function renderRow(c, archived) {
   const kg = bestKg(c);
   if (kg) meta += '<div class="num">' + (st === "white" || st === "yellow" ? fmtTon(kg) : fmtNum(kg) + " kg") + '</div><div class="numl">' + (st === "white" || st === "yellow" ? "sipariş" : "net ağırlık") + "</div>";
   if (loaded && cartonsOf(c)) meta += '<div class="numl">' + fmtNum(cartonsOf(c)) + " karton</div>";
-  if (loaded && c.totalCost) meta += '<div class="cost">' + esc(fmtMoney(parseMoney(c.totalCost))) + (c.unitPrice ? '<span class="unit"> · ' + esc(fmtPriceVal(c.unitPrice)) + " $/kg</span>" : "") + "</div>";
+  const costV = costOf(c);
+  if (loaded && costV) meta += '<div class="cost">' + esc(fmtMoney(costV)) + (unitOf(c) ? '<span class="unit"> · ' + esc(fmtPriceVal(unitOf(c))) + " $/kg</span>" : "") + "</div>";
   const pfx = findPf(c.pfId);
   if (st === "yellow" && pfx && pfx.pricePerKg && kg) meta += '<div class="est">≈ ' + esc(fmtMoney(kg * pfx.pricePerKg)) + " tahmini</div>";
 
@@ -1238,7 +1232,7 @@ function renderBoard() {
   let shown = 0;
   companies.forEach(comp => {
     if (ui.company !== "all" && ui.company !== comp) return;
-    const pfs = proformas.filter(p => p.supplier === comp && !p.isArchived).sort((a, b) => pfTime(b) - pfTime(a));
+    const pfs = proformas.filter(p => p.supplier === comp && !p.isArchived).sort(pfOrder);
     let cards = "";
     pfs.forEach(pf => {
       const all = containers.filter(c => c.pfId === pf.id).sort(byIndex);
@@ -1265,7 +1259,7 @@ function renderArchive() {
   const wrap = $("archiveContainer");
   wrap.hidden = ui.tab !== "archive";
   if (ui.tab !== "archive") return;
-  const list = proformas.filter(p => p.isArchived && (ui.company === "all" || p.supplier === ui.company)).sort((a, b) => pfTime(b) - pfTime(a));
+  const list = proformas.filter(p => p.isArchived && (ui.company === "all" || p.supplier === ui.company)).sort(pfOrder);
   const q = ui.q;
   const shown = q ? list.filter(pf => pfHit(pf) || containers.some(c => c.pfId === pf.id && cHit(c))) : list;
   wrap.innerHTML = shown.length
@@ -1323,6 +1317,7 @@ document.addEventListener("click", e => {
     case "toggleDelivered": if (ui.expanded.has(id)) ui.expanded.delete(id); else ui.expanded.add(id); renderAll(); break;
     case "exportExcel": exportDetailedExcel(); break;
     case "exportImage": captureActiveCardsAsImage(); break;
+    case "backup": exportBackup(); break;
   }
 });
 
@@ -1343,92 +1338,93 @@ $("searchInput").addEventListener("input", e => {
 });
 
 // =====================================================
+// 11b. YEDEK (tüm veriyi tek dosyada indirir)
+// =====================================================
+function exportBackup() {
+  const stamp = todayISO() + " " + String(new Date().getHours()).padStart(2, "0") + ":" + String(new Date().getMinutes()).padStart(2, "0");
+  const data = { app: "iplik-takip-masasi", version: 1, exportedAt: new Date().toISOString(), companies: companyDocs, proformas, containers };
+  const blob = new Blob([JSON.stringify(data, null, 1)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "Iplik_Takip_Yedek_" + todayISO() + ".json";
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  setTimeout(() => URL.revokeObjectURL(url), 1500);
+  saveData("app_last_backup", stamp);
+  $("backupBtn").title = "Son yedek: " + stamp;
+  toast("Yedek indirildi (" + proformas.length + " proforma, " + containers.length + " konteyner)");
+}
+
+// =====================================================
 // 12. RESİM RAPORU
 // =====================================================
 function captureActiveCardsAsImage() {
-  const active = activeContainers().filter(c => ["yellow", "green", "red"].includes(stageOf(c)));
-  if (!active.length) { toast("Siparişte, yolda veya limanda konteyner yok.", "err"); return; }
+  const act = activeContainers();
+  if (!act.length) { toast("Aktif konteyner yok.", "err"); return; }
   if (typeof html2canvas === "undefined") { toast("Resim kütüphanesi yüklenemedi. İnternet bağlantısını kontrol edin.", "err"); return; }
 
-  const by = k => active.filter(c => stageOf(c) === k);
   const sumKg = list => list.reduce((a, c) => a + bestKg(c), 0);
-  const notDone = c => (c.docsStatus || "pending") !== "received";
-  const noDocs = active.filter(c => stageOf(c) !== "yellow" && notDone(c));
   const now = new Date();
   const hhmm = String(now.getHours()).padStart(2, "0") + ":" + String(now.getMinutes()).padStart(2, "0");
-
-  const tile = (k, label, list) => '<div class="rp-tile s-' + k + '"><div class="rp-tn">' + list.length + '</div><div class="rp-tl">' + label +
-    '</div><div class="rp-tt">' + (list.length ? fmtTon(sumKg(list)) : "&nbsp;") + "</div></div>";
-  const docCell = c => {
-    const st = stageOf(c);
-    if (st === "yellow") return '<span class="rp-muted">—</span>';
-    const d = c.docsStatus || "pending";
-    if (d === "received") return '<span class="rp-ok">Tamam</span>' + (c.docsDate ? '<div class="rp-line2">' + esc(fmtDate(c.docsDate)) + "</div>" : "");
-    return '<span class="' + (st === "red" ? "rp-late" : "rp-soon") + '">' + (d === "partial" ? "Eksik" : "Bekleniyor") + "</span>" + (c.docsNote ? '<div class="rp-line2">' + esc(c.docsNote) + "</div>" : "");
+  const tile = k => {
+    const l = act.filter(c => stageOf(c) === k);
+    return '<div class="rp-tile s-' + k + '"><div class="rp-tn">' + l.length + '</div><div class="rp-tl">' + STAGE[k].label + '</div><div class="rp-tt">' + (l.length ? fmtTon(sumKg(l)) : "&nbsp;") + "</div></div>";
   };
 
-  let html = '<div class="rp-top"><div><div class="rp-title">Sevkiyat Durum Raporu</div><div class="rp-sub">Aktif proformalar · sipariş, yol ve liman durumu</div></div>' +
+  const card = c => {
+    const st = stageOf(c);
+    const loaded = st === "green" || st === "red" || st === "blue";
+    const kg = bestKg(c);
+    const items = loaded && c.loadedItems && c.loadedItems.length
+      ? c.loadedItems.map(i => [i.code, fmtNum(i.kg) + " kg" + (i.cartons ? " · " + fmtNum(i.cartons) + " karton" : "")])
+      : (st === "white" ? [] : (c.orderItems || []).map(i => [i.code, fmtTonRaw(i.ton) + " t"]));
+    const shown = items.slice(0, 3).map(i => '<div class="rp-it"><b>' + esc(i[0]) + "</b><span>" + esc(i[1]) + "</span></div>").join("") +
+      (items.length > 3 ? '<div class="rp-it rp-muted">+' + (items.length - 3) + " kalem daha</div>" : "");
+
+    let when = "";
+    if (st === "white") when = '<span class="rp-muted">Detay bekleniyor</span>';
+    else if (st === "yellow") when = '<span class="rp-muted">' + (c.orderDate ? "Sipariş " + esc(fmtDate(c.orderDate)) : "Siparişte") + "</span>";
+    else if (st === "green") {
+      if (c.arrivalDate) { const d = daysUntil(c.arrivalDate); when = 'Varış <b>' + esc(fmtDate(c.arrivalDate)) + '</b> <span class="' + (d < 0 ? "rp-late" : d <= 3 ? "rp-soon" : "rp-ok") + '">' + esc(relDays(d)) + "</span>"; }
+      else when = '<span class="rp-muted">Varış tarihi girilmedi</span>';
+    } else if (st === "red") when = '<b>Limanda</b>' + (c.arrivalDate ? " " + esc(fmtDate(c.arrivalDate)) : "");
+    else when = 'Depo: <b>' + esc(c.warehouseName || "") + "</b> " + esc(fmtDate(c.warehouseDate));
+
+    let doc = "";
+    if (loaded) {
+      const d = c.docsStatus || "pending";
+      doc = '<div>Evrak: <span class="' + (d === "received" ? "rp-ok" : st === "red" ? "rp-late" : "rp-soon") + '">' + (d === "received" ? "Tamam" : d === "partial" ? "Eksik" : "Bekleniyor") + "</span></div>";
+    }
+    const idx = String(c.order || "").split("/");
+    return '<div class="rp-card s-' + st + '"><div class="rp-ch"><span class="rp-ix">' + esc((idx[0] || "").trim()) + "<small>/ " + esc((idx[1] || "").trim()) + '</small></span><span class="rp-st">' + STAGE[st].label + "</span></div>" +
+      '<div class="rp-cn">' + (c.no ? esc(c.no) : '<span class="rp-muted">Konteyner no yok</span>') + "</div>" +
+      (c.shippingLine ? '<div class="rp-cl">' + esc(c.shippingLine) + (c.blNo ? " · B/L " + esc(c.blNo) : "") + "</div>" : "") +
+      '<div class="rp-items">' + shown + "</div>" +
+      '<div class="rp-foot2">' + (kg ? '<div class="rp-cw">' + (loaded && c.weightKg ? fmtNum(c.weightKg) + " kg" : fmtTon(kg)) + (cartonsOf(c) ? " · " + fmtNum(cartonsOf(c)) + " karton" : "") + "</div>" : "") +
+      "<div>" + when + "</div>" + doc + "</div></div>";
+  };
+
+  let html = '<div class="rp-top"><div><div class="rp-title">Sevkiyat Durum Raporu</div><div class="rp-sub">Aktif proformalar ve konteynerlerin güncel durumu</div></div>' +
     '<div class="rp-date">' + esc(fmtDate(todayISO())) + "<small>saat " + hhmm + "</small></div></div>";
+  html += '<div class="rp-tiles">' + STAGE_ORDER.map(tile).join("") + "</div>";
 
-  html += '<div class="rp-tiles">' + tile("yellow", "Siparişte", by("yellow")) + tile("green", "Yolda", by("green")) + tile("red", "Limanda", by("red")) +
-    '<div class="rp-tile rp-docs' + (noDocs.length ? " warn" : "") + '"><div class="rp-tn">' + noDocs.length + '</div><div class="rp-tl">Evrakı tamam olmayan</div><div class="rp-tt">yolda ve limanda</div></div></div>';
-
-  // 1) Varış takvimi: limanda olanlar, sonra tahmini varışa göre, tarihsizler en sonda
-  const moving = active.filter(c => stageOf(c) !== "yellow");
-  if (moving.length) {
-    const rank = c => stageOf(c) === "red" ? 0 : (c.arrivalDate ? 1 : 2);
-    moving.sort((a, b) => rank(a) - rank(b) || String(a.arrivalDate || "").localeCompare(String(b.arrivalDate || "")));
-    html += '<div class="rp-h">Varış takvimi</div><table class="rp-table rp-sch"><thead><tr><th>Varış</th><th>Kalan</th><th>Firma / proforma</th><th>Konteyner</th><th style="text-align:right">Net ağırlık</th><th>Evrak</th></tr></thead><tbody>';
-    moving.forEach(c => {
-      const st = stageOf(c);
-      const pf = findPf(c.pfId);
-      let when = '<span class="rp-muted">girilmedi</span>', left = '<span class="rp-muted">—</span>';
-      if (st === "red") { when = c.arrivalDate ? esc(fmtDate(c.arrivalDate)) : "—"; left = '<span class="rp-ok">Limanda</span>'; }
-      else if (c.arrivalDate) {
-        const d = daysUntil(c.arrivalDate);
-        when = esc(fmtDate(c.arrivalDate));
-        left = '<span class="' + (d < 0 ? "rp-late" : d <= 3 ? "rp-soon" : "rp-ok") + '">' + esc(relDays(d)) + "</span>";
-      }
-      html += '<tr class="s-' + st + '"><td class="m">' + when + "</td><td>" + left + "</td><td><b>" + esc(c.supplier) + "</b> · " + esc(pf ? pf.no : c.pfNo || "") +
-        '</td><td class="m">' + esc(c.no || "—") + (c.shippingLine ? '<div class="rp-line2">' + esc(c.shippingLine) + "</div>" : "") +
-        '</td><td class="r">' + fmtNum(bestKg(c)) + " kg</td><td>" + docCell(c) + "</td></tr>";
-    });
-    html += "</tbody></table>";
-  }
-
-  // 2) Firma ve proforma ayrıntıları
-  html += '<div class="rp-h">Proforma ayrıntıları</div>';
   companies.forEach(comp => {
-    proformas.filter(p => p.supplier === comp && !p.isArchived).sort((a, b) => pfTime(b) - pfTime(a)).forEach(pf => {
-      const list = active.filter(c => c.pfId === pf.id).sort(cntSort);
-      if (!list.length) return;
-      const total = containers.filter(c => c.pfId === pf.id).length;
-      html += '<div class="rp-pf2"><div class="rp-pfbar"><span class="co">' + esc(comp) + "</span><b>" + esc(pf.no) + "</b>" +
-        (pf.incoterm ? "<span>" + esc(pf.incoterm) + "</span>" : "") +
+    const pfs = proformas.filter(p => p.supplier === comp && !p.isArchived && act.some(c => c.pfId === p.id)).sort(pfOrder);
+    if (!pfs.length) return;
+    const all = act.filter(c => pfs.some(p => p.id === c.pfId));
+    html += '<div class="rp-co"><b>' + esc(comp) + "</b><span>" + pfs.length + " proforma · " + all.length + " konteyner · " + fmtTon(sumKg(all)) + "</span></div>";
+    pfs.forEach(pf => {
+      const list = act.filter(c => c.pfId === pf.id).sort(byIndex);
+      html += '<div class="rp-pfbar"><b>' + esc(pf.no) + "</b>" + (pf.incoterm ? "<span>" + esc(pf.incoterm) + "</span>" : "") +
+        (pf.date ? "<span>" + esc(fmtDate(pf.date)) + "</span>" : "") +
         (pf.pricePerKg ? "<span>" + fmtPriceVal(pf.pricePerKg) + " $/kg</span>" : "") +
-        '<span class="sp">' + list.length + " / " + total + " konteyner yolda veya siparişte</span></div>" +
-        '<table class="rp-table"><thead><tr><th>Sıra</th><th>Durum</th><th>Konteyner / hat</th><th>İçerik</th><th style="text-align:right">Net ağırlık</th><th style="text-align:right">Karton</th><th>Varış</th><th>Evrak</th></tr></thead><tbody>';
-      list.forEach(c => {
-        const st = stageOf(c);
-        const loaded = st !== "yellow";
-        const items = loaded && c.loadedItems && c.loadedItems.length
-          ? c.loadedItems.map(i => '<div class="rp-it"><b>' + esc(i.code) + "</b> <span>" + fmtNum(i.kg) + " kg" + (i.cartons ? " · " + fmtNum(i.cartons) + " karton" : "") + "</span></div>").join("")
-          : (c.orderItems || []).map(i => '<div class="rp-it"><b>' + esc(i.code) + "</b> <span>" + fmtTonRaw(i.ton) + " t</span></div>").join("");
-        let arr;
-        if (st === "yellow") arr = '<span class="rp-muted">Sipariş ' + esc(fmtShort(c.orderDate)) + "</span>";
-        else if (st === "red") arr = '<span class="rp-ok">Limanda</span>' + (c.arrivalDate ? '<div class="rp-line2">' + esc(fmtDate(c.arrivalDate)) + "</div>" : "");
-        else if (c.arrivalDate) { const d = daysUntil(c.arrivalDate); arr = esc(fmtDate(c.arrivalDate)) + '<div class="' + (d < 0 ? "rp-late" : d <= 3 ? "rp-soon" : "rp-ok") + '">' + esc(relDays(d)) + "</div>"; }
-        else arr = '<span class="rp-muted">girilmedi</span>';
-        html += '<tr class="s-' + st + '"><td class="m">' + esc(c.order) + '</td><td><span class="rp-st">' + STAGE[st].label + '</span></td><td class="m">' +
-          esc(c.no || "—") + (c.shippingLine ? '<div class="rp-line2">' + esc(c.shippingLine) + (c.blNo ? " · B/L " + esc(c.blNo) : "") + "</div>" : "") +
-          "</td><td>" + items + '</td><td class="r">' + (loaded && c.weightKg ? fmtNum(c.weightKg) + " kg" : fmtTon(bestKg(c))) + '</td><td class="r">' +
-          (loaded && cartonsOf(c) ? fmtNum(cartonsOf(c)) : "—") + "</td><td>" + arr + "</td><td>" + docCell(c) + "</td></tr>";
-      });
-      html += "</tbody></table></div>";
+        '<span class="sp">' + list.length + " konteyner</span></div>" +
+        '<div class="rp-cards">' + list.map(card).join("") + "</div>";
     });
   });
-
-  html += '<div class="rp-foot"><span>İplik Takip Masası</span><span>' + active.length + " konteyner · " + fmtTon(sumKg(active)) + "</span></div>";
+  html += '<div class="rp-foot"><span>İplik Takip Masası</span><span>' + act.length + " konteyner · " + fmtTon(sumKg(act)) + "</span></div>";
 
   const area = $("printCanvasArea");
   area.innerHTML = html;
@@ -1452,7 +1448,7 @@ async function exportDetailedExcel() {
   if (!containers.length) { toast("Raporlanacak konteyner yok.", "err"); return; }
   if (typeof ExcelJS === "undefined") { toast("Excel kütüphanesi yüklenemedi. İnternet bağlantısını kontrol edin.", "err"); return; }
 
-  const statusColors = { white: "ECEFF2", yellow: "FFF2CC", green: "DCE8FB", red: "D9F3E5", blue: "FDE1DF" };   // yolda=mavi, limanda=yeşil, depoda=kırmızı
+  const statusColors = { white: "FFFFFF", yellow: "FFF2CC", green: "DCE8FB", red: "E4E8EC", blue: "FDE1DF" };   // beyaz=sipariş bekleyen, sarı=siparişte, mavi=yolda, gümüş=limanda, kırmızı=depoda
   const fill = hex => ({ type: "pattern", pattern: "solid", fgColor: { argb: "FF" + hex } });
   const thin = { style: "thin", color: { argb: "FFC8D0D8" } };
   const border = { top: thin, left: thin, bottom: thin, right: thin };
@@ -1464,7 +1460,7 @@ async function exportDetailedExcel() {
     const s = String(a.supplier || "").localeCompare(String(b.supplier || ""), "tr");
     if (s) return s;
     const pa = pfMap[a.pfId], pb = pfMap[b.pfId];
-    const t = (pb ? pfTime(pb) : 0) - (pa ? pfTime(pa) : 0);
+    const t = pa && pb ? pfOrder(pa, pb) : 0;
     return t || byIndex(a, b);
   });
 
@@ -1488,7 +1484,7 @@ async function exportDetailedExcel() {
     { header: "Evrak tarihi", key: "docsDate", width: 13 },
     { header: "Net ağırlık (kg)", key: "kg", width: 16 },
     { header: "Toplam karton", key: "cartons", width: 14 },
-    { header: "Fatura tutarı ($)", key: "cost", width: 16 },
+    { header: "Toplam tutar ($)", key: "cost", width: 16 },
     { header: "Birim fiyat ($/kg)", key: "unit", width: 14 },
     { header: "Ek masraf ($)", key: "extra", width: 14 },
     { header: "Toplam maliyet ($)", key: "landed", width: 16 },
@@ -1530,7 +1526,7 @@ async function exportDetailedExcel() {
     if (loaded && c.loadedItems && c.loadedItems.length) items = c.loadedItems.map(i => i.code + ": " + fmtNum(i.kg) + " kg" + (i.cartons ? " / " + fmtNum(i.cartons) + " karton" : "")).join(" | ");
     else if (c.orderItems && c.orderItems.length) items = c.orderItems.map(i => i.code + ": " + fmtTonRaw(i.ton) + " t").join(" | ");
 
-    const invoice = parseMoney(c.totalCost), extra = Number(c.extraCost) || 0;
+    const invoice = costOf(c), extra = Number(c.extraCost) || 0;
     totalInvoice += invoice; totalExtra += extra; totalCartons += cartonsOf(c);
     const kgForCost = c.weightKg || kg;
     const row = ws.addRow({
@@ -1538,7 +1534,7 @@ async function exportDetailedExcel() {
       order: c.order || "",
       no: c.no || "—", line: c.shippingLine || "—", bl: c.blNo || "—",
       status: STAGE[st].label, desk: pf.isArchived ? "Arşivde" : "Aktif",
-      docs: loaded ? docLabel(c) : "—", docsDate: loaded && c.docsDate ? fmtDate(c.docsDate) : "—", kg: kg || null, cartons: cartonsOf(c) || null, cost: invoice || null, unit: c.unitPrice || null, extra: extra || null, landed: invoice ? invoice + extra : null, perkg: invoice && kgForCost ? Math.round((invoice + extra) / kgForCost * 10000) / 10000 : null,
+      docs: loaded ? docLabel(c) : "—", docsDate: loaded && c.docsDate ? fmtDate(c.docsDate) : "—", kg: kg || null, cartons: cartonsOf(c) || null, cost: invoice || null, unit: unitOf(c) || null, extra: extra || null, landed: invoice ? invoice + extra : null, perkg: invoice && kgForCost ? Math.round((invoice + extra) / kgForCost * 10000) / 10000 : null,
       orderDate: fmtDate(c.orderDate) || "—", loadDate: fmtDate(c.loadingDate) || "—",
       arrival: fmtDate(c.arrivalDate) || "—", whDate: fmtDate(c.warehouseDate) || "—",
       whName: c.warehouseName || "—", items
@@ -1566,8 +1562,8 @@ async function exportDetailedExcel() {
     ["Depoya teslim edilen", delivered + " konteyner", "FDE1DF"],
     ["Toplam ağırlık", fmtNum(totalKg) + " kg (" + (totalKg / 1000).toFixed(2) + " ton)", "FFF2CC"],
     ["Toplam karton", fmtNum(totalCartons) + " adet", "ECEFF2"],
-    ["Toplam fatura tutarı", fmtMoney(totalInvoice), "DCE8FB"],
-    ["Toplam maliyet (fatura + ek masraf)", fmtMoney(totalInvoice + totalExtra), "DCE8FB"]
+    ["Toplam tutar", fmtMoney(totalInvoice), "DCE8FB"],
+    ["Toplam maliyet (tutar + ek masraf)", fmtMoney(totalInvoice + totalExtra), "DCE8FB"]
   ].forEach(l => {
     const r = sm.addRow([l[0], l[1]]);
     r.eachCell(cell => { cell.fill = fill(l[2]); cell.border = border; });
@@ -1630,6 +1626,7 @@ function startCloudSync() {
 
 function init() {
   $("brandMark").innerHTML = ic("stack");
+  try { const lb = localStorage.getItem("app_last_backup"); if (lb) $("backupBtn").title = "Son yedek: " + JSON.parse(lb); } catch (e) {}
   $("searchBox").insertAdjacentHTML("afterbegin", ic("search"));
   updateCompanyList();
   renderAll();
