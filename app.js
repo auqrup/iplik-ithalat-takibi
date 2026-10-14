@@ -405,15 +405,15 @@ function openProformaModal(pfId, presetSupplier) {
     const p = findPf(editingPfId);
     if (!p) return;
     $("pfModalTitle").textContent = "Proformayı düzenle";
-    $("pfModalSub").textContent = p.supplier + " firması";
+    $("pfModalSub").textContent = p.supplier + " firması. Konteyner sayısını artırabilir veya boş konteynerleri azaltabilirsiniz.";
     if (!companies.includes(p.supplier)) sel.innerHTML += '<option value="' + esc(p.supplier) + '">' + esc(p.supplier) + "</option>";
     sel.value = p.supplier;
     sel.disabled = true;
     $("pfNumber").value = p.no || "";
     $("pfDate").value = p.date || "";
     $("pfIncoterm").value = p.incoterm || "";
-    $("pfTotal").value = p.total;
-    $("pfTotal").disabled = true;
+    $("pfTotal").value = containers.filter(c => c.pfId === p.id).length || p.total;
+    $("pfTotal").disabled = false;
     $("pfPriceKg").value = p.pricePerKg || "";
     $("pfPlanTon").value = p.planTon || DEFAULT_PLAN_TON;
     $("pfNote").value = p.note || "";
@@ -439,7 +439,7 @@ function openProformaModal(pfId, presetSupplier) {
   showModal("modalProforma");
 }
 
-function saveProforma() {
+async function saveProforma() {
   const supplier = $("pfSupplierSelect").value;
   const no = $("pfNumber").value.trim().toUpperCase();
   const date = $("pfDate").value;
@@ -454,27 +454,53 @@ function saveProforma() {
   if (!supplier) return fail("Firma seçin.");
   if (!no) return fail("Proforma numarasını yazın.");
   if (!incoterm) return fail("Teslim şeklini seçin (FOB, CNF...).");
-  if (!editingPfId && (!total || total < 1)) return fail("Konteyner sayısı en az 1 olmalı.");
+  if (!total || total < 1) return fail("Konteyner sayısı en az 1 olmalı.");
   err.style.display = "none";
 
   if (editingPfId) {
     const p = findPf(editingPfId);
     if (!p) return;
+    const mine = containers.filter(c => c.pfId === p.id).sort(byIndex);
+    const diff = total - mine.length;
+    let removed = [];
+    if (diff < 0) {
+      // Sadece detayı hiç girilmemiş (beyaz) konteynerler, sondan başlayarak silinir
+      const empties = mine.filter(c => stageOf(c) === "white").sort((a, b) => (b.orderIndex || 0) - (a.orderIndex || 0));
+      if (empties.length < -diff) return fail("Detayı girilmiş konteynerler silinemez. Konteyner sayısı en az " + (mine.length - empties.length) + " olmalı.");
+      removed = empties.slice(0, -diff);
+      const ok = await askConfirm({ title: removed.length + " boş konteyner silinsin mi?", text: "Sipariş detayı girilmemiş son konteynerler kaldırılacak.", okText: "Evet, sil", danger: true });
+      if (!ok) return;
+    }
+    err.style.display = "none";
     const relabel = p.no !== no || (p.date || "") !== (date || "");
     const patch = { no, date, incoterm, pricePerKg, planTon, note };
     Object.assign(p, patch);
-    let changed = [];
-    if (relabel) {
-      changed = containers.filter(c => c.pfId === p.id);
-      changed.forEach(c => { c.pfNo = no; c.pfDate = date; });
+    const stampE = Date.now();
+    const added = [];
+    if (diff > 0) {
+      const start = mine.reduce((m, c) => Math.max(m, c.orderIndex || 0), 0);
+      for (let k = 1; k <= diff; k++) added.push(blankContainer(p, start + k, 0, stampE + k));
+      containers = containers.concat(added);
     }
+    if (removed.length) {
+      const gone = new Set(removed.map(c => c.id));
+      containers = containers.filter(c => !gone.has(c.id));
+    }
+    const list = renumber(p.id);
+    p.total = list.length;
+    patch.total = p.total;
+    if (relabel) list.forEach(c => { c.pfNo = no; c.pfDate = date; });
     cacheAll();
     hideModal("modalProforma");
     renderAll();
-    toast("Proforma güncellendi");
+    toast(diff > 0 ? "Proforma güncellendi, " + diff + " konteyner eklendi" : diff < 0 ? "Proforma güncellendi, " + removed.length + " konteyner silindi" : "Proforma güncellendi");
     remoteBatch(b => {
       b.set(proformasCol.doc(p.id), patch, { merge: true });
-      changed.forEach(c => b.set(containersCol.doc(c.id), { pfNo: no, pfDate: date }, { merge: true }));
+      removed.forEach(c => b.delete(containersCol.doc(c.id)));
+      list.forEach(c => {
+        if (added.some(a => a.id === c.id)) b.set(containersCol.doc(c.id), Object.assign({}, c, { createdAt: serverTs() }));
+        else b.set(containersCol.doc(c.id), relabel ? { orderIndex: c.orderIndex, order: c.order, pfNo: no, pfDate: date } : { orderIndex: c.orderIndex, order: c.order }, { merge: true });
+      });
     });
     return;
   }
@@ -1357,7 +1383,7 @@ function captureActiveCardsAsImage() {
       const st = stageOf(c);
       const pf = findPf(c.pfId);
       let when = '<span class="rp-muted">girilmedi</span>', left = '<span class="rp-muted">—</span>';
-      if (st === "red") { when = c.arrivalDate ? esc(fmtDate(c.arrivalDate)) : "—"; left = '<span class="rp-late">Limanda</span>'; }
+      if (st === "red") { when = c.arrivalDate ? esc(fmtDate(c.arrivalDate)) : "—"; left = '<span class="rp-ok">Limanda</span>'; }
       else if (c.arrivalDate) {
         const d = daysUntil(c.arrivalDate);
         when = esc(fmtDate(c.arrivalDate));
@@ -1390,7 +1416,7 @@ function captureActiveCardsAsImage() {
           : (c.orderItems || []).map(i => '<div class="rp-it"><b>' + esc(i.code) + "</b> <span>" + fmtTonRaw(i.ton) + " t</span></div>").join("");
         let arr;
         if (st === "yellow") arr = '<span class="rp-muted">Sipariş ' + esc(fmtShort(c.orderDate)) + "</span>";
-        else if (st === "red") arr = '<span class="rp-late">Limanda</span>' + (c.arrivalDate ? '<div class="rp-line2">' + esc(fmtDate(c.arrivalDate)) + "</div>" : "");
+        else if (st === "red") arr = '<span class="rp-ok">Limanda</span>' + (c.arrivalDate ? '<div class="rp-line2">' + esc(fmtDate(c.arrivalDate)) + "</div>" : "");
         else if (c.arrivalDate) { const d = daysUntil(c.arrivalDate); arr = esc(fmtDate(c.arrivalDate)) + '<div class="' + (d < 0 ? "rp-late" : d <= 3 ? "rp-soon" : "rp-ok") + '">' + esc(relDays(d)) + "</div>"; }
         else arr = '<span class="rp-muted">girilmedi</span>';
         html += '<tr class="s-' + st + '"><td class="m">' + esc(c.order) + '</td><td><span class="rp-st">' + STAGE[st].label + '</span></td><td class="m">' +
@@ -1426,7 +1452,7 @@ async function exportDetailedExcel() {
   if (!containers.length) { toast("Raporlanacak konteyner yok.", "err"); return; }
   if (typeof ExcelJS === "undefined") { toast("Excel kütüphanesi yüklenemedi. İnternet bağlantısını kontrol edin.", "err"); return; }
 
-  const statusColors = { white: "ECEFF2", yellow: "FFF2CC", green: "D9F3E5", red: "FDE1DF", blue: "DCE8FB" };
+  const statusColors = { white: "ECEFF2", yellow: "FFF2CC", green: "DCE8FB", red: "D9F3E5", blue: "FDE1DF" };   // yolda=mavi, limanda=yeşil, depoda=kırmızı
   const fill = hex => ({ type: "pattern", pattern: "solid", fgColor: { argb: "FF" + hex } });
   const thin = { style: "thin", color: { argb: "FFC8D0D8" } };
   const border = { top: thin, left: thin, bottom: thin, right: thin };
@@ -1536,8 +1562,8 @@ async function exportDetailedExcel() {
   [
     ["Toplam konteyner", containers.length + " adet", "ECEFF2"],
     ["Siparişte (yüklenmemiş)", ordered + " konteyner", "FFF2CC"],
-    ["Yolda veya limanda", onTheWay + " konteyner", "D9F3E5"],
-    ["Depoya teslim edilen", delivered + " konteyner", "DCE8FB"],
+    ["Yolda veya limanda", onTheWay + " konteyner", "DCE8FB"],
+    ["Depoya teslim edilen", delivered + " konteyner", "FDE1DF"],
     ["Toplam ağırlık", fmtNum(totalKg) + " kg (" + (totalKg / 1000).toFixed(2) + " ton)", "FFF2CC"],
     ["Toplam karton", fmtNum(totalCartons) + " adet", "ECEFF2"],
     ["Toplam fatura tutarı", fmtMoney(totalInvoice), "DCE8FB"],
