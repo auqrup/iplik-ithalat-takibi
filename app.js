@@ -125,7 +125,8 @@ const ICONS = {
   trash: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>',
   check: '<path d="M20 6 9 17l-5-5"/>',
   chevron: '<path d="m6 9 6 6 6-6"/>',
-  warehouse: '<path d="M3 21V9l9-5 9 5v12M9 21v-6h6v6"/>'
+  warehouse: '<path d="M3 21V9l9-5 9 5v12M9 21v-6h6v6"/>',
+  file: '<path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8z"/><path d="M14 3v5h5M9 13h6M9 17h6"/>'
 };
 function ic(name) {
   return '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + (ICONS[name] || "") + "</svg>";
@@ -227,6 +228,8 @@ const findC = id => containers.find(c => c.id === id);
 const findPf = id => proformas.find(p => p.id === id);
 
 function orderKg(c) { return c.weightTon ? Math.round(c.weightTon * 1000) : 0; }
+function cartonsOf(c) { return (c.loadedItems || []).reduce((a, it) => a + (Number(it.cartons) || 0), 0); }
+function docLabel(c) { const d = c.docsStatus || "pending"; return d === "received" ? "Tamam" : d === "partial" ? "Eksik" : "Bekleniyor"; }
 function bestKg(c) {
   const st = stageOf(c);
   if (st === "white" || st === "yellow") return orderKg(c);
@@ -246,7 +249,7 @@ function blankContainer(pf, idx, total, stamp) {
     id: "cnt_" + stamp + "_" + idx,
     pfId: pf.id, supplier: pf.supplier, pfNo: pf.no, pfDate: pf.date || "",
     order: idx + " / " + total, orderIndex: idx,
-    no: "", shippingLine: "", blNo: "", weightTon: 0, weightKg: 0, totalCost: "", unitPrice: 0, extraCost: 0, calcNote: "",
+    no: "", shippingLine: "", blNo: "", weightTon: 0, weightKg: 0, totalCost: "", unitPrice: 0, extraCost: 0, calcNote: "", docsStatus: "pending", docsDate: "", docsNote: "",
     orderDate: "", orderItems: [], loadedItems: [], details: "",
     status: "white", loadingDate: "", arrivalDate: "", warehouseDate: "", warehouseName: "",
     statusBeforeWarehouse: ""
@@ -409,8 +412,6 @@ function openProformaModal(pfId, presetSupplier) {
     $("pfNumber").value = p.no || "";
     $("pfDate").value = p.date || "";
     $("pfIncoterm").value = p.incoterm || "";
-    $("pfLoadPort").value = p.loadPort || "";
-    $("pfDestPort").value = p.destPort || "";
     $("pfTotal").value = p.total;
     $("pfTotal").disabled = true;
     $("pfPriceKg").value = p.pricePerKg || "";
@@ -426,8 +427,6 @@ function openProformaModal(pfId, presetSupplier) {
     $("pfNumber").value = "";
     $("pfDate").value = todayISO();
     $("pfIncoterm").value = "";
-    $("pfLoadPort").value = "";
-    $("pfDestPort").value = "";
     $("pfTotal").value = 3;
     $("pfTotal").disabled = false;
     $("pfPriceKg").value = "";
@@ -445,8 +444,6 @@ function saveProforma() {
   const no = $("pfNumber").value.trim().toUpperCase();
   const date = $("pfDate").value;
   const incoterm = $("pfIncoterm").value;
-  const loadPort = $("pfLoadPort").value.trim();
-  const destPort = $("pfDestPort").value.trim();
   const total = parseInt($("pfTotal").value, 10);
   const pricePerKg = parseFloat($("pfPriceKg").value) || 0;
   const planTon = parseFloat($("pfPlanTon").value) || DEFAULT_PLAN_TON;
@@ -464,7 +461,7 @@ function saveProforma() {
     const p = findPf(editingPfId);
     if (!p) return;
     const relabel = p.no !== no || (p.date || "") !== (date || "");
-    const patch = { no, date, incoterm, loadPort, destPort, pricePerKg, planTon, note };
+    const patch = { no, date, incoterm, pricePerKg, planTon, note };
     Object.assign(p, patch);
     let changed = [];
     if (relabel) {
@@ -483,7 +480,7 @@ function saveProforma() {
   }
 
   const stamp = Date.now();
-  const pf = { id: "pf_" + stamp, supplier, no, date, incoterm, loadPort, destPort, total, pricePerKg, planTon, note, isArchived: false, timestamp: stamp };
+  const pf = { id: "pf_" + stamp, supplier, no, date, incoterm, total, pricePerKg, planTon, note, isArchived: false, timestamp: stamp };
   const list = [];
   for (let i = 1; i <= total; i++) list.push(blankContainer(pf, i, total, stamp));
 
@@ -585,17 +582,22 @@ function cntLabel(c) {
   return (pf ? pf.supplier + " / " + pf.no : c.pfNo || "") + " / Konteyner " + c.order;
 }
 
-function buildYarnRow(codeClass, valClass, placeholder, step, code, val, onChange) {
+function buildYarnRow(codeClass, valClass, placeholder, step, code, val, onChange, third) {
   const div = document.createElement("div");
   div.className = "yarn-row";
   const i1 = document.createElement("input");
   i1.type = "text"; i1.placeholder = "İplik / renk kodu"; i1.className = codeClass; i1.value = code || "";
   const i2 = document.createElement("input");
   i2.type = "number"; i2.step = step; i2.placeholder = placeholder; i2.className = valClass; i2.value = val ? val : "";
+  let i3 = null;
+  if (third) {
+    i3 = document.createElement("input");
+    i3.type = "number"; i3.step = "1"; i3.min = "0"; i3.placeholder = third.ph; i3.className = third.cls; i3.value = third.val ? third.val : "";
+  }
   const btn = document.createElement("button");
   btn.type = "button"; btn.className = "icon-btn"; btn.textContent = "✕"; btn.setAttribute("aria-label", "Satırı sil");
   btn.addEventListener("click", () => { div.remove(); onChange(); });
-  div.append(i1, i2, btn);
+  div.append.apply(div, i3 ? [i1, i2, i3, btn] : [i1, i2, btn]);
   return div;
 }
 
@@ -603,8 +605,9 @@ function addOrderRow(code, ton) {
   $("orderItemsContainer").appendChild(buildYarnRow("order-code-input", "order-ton-input", "Ton", "0.01", code, ton, updateOrderTotal));
   updateOrderTotal();
 }
-function addLoadedRow(code, kg) {
-  $("loadedItemsContainer").appendChild(buildYarnRow("loaded-code-input", "loaded-kg-input", "Kg", "1", code, kg, () => { syncAutoWeight(); refreshStatusCalc(); }));
+function addLoadedRow(code, kg, cartons) {
+  $("loadedItemsContainer").appendChild(buildYarnRow("loaded-code-input", "loaded-kg-input", "Kg", "1", code, kg,
+    () => { syncAutoWeight(); refreshStatusCalc(); }, { cls: "loaded-ctn-input", ph: "Karton", val: cartons }));
   updateWeightCheck();
 }
 
@@ -680,6 +683,9 @@ function updateCalc() {
     const d = n.kg - planKg;
     rows.push(["Plana göre", fmtTonRaw(n.kg / 1000) + " t, plan " + fmtTonRaw(planKg / 1000) + " t (" + (d >= 0 ? "+" : "−") + fmtTonRaw(Math.abs(d) / 1000) + " t)", ""]);
   }
+  let ctn = 0;
+  document.querySelectorAll("#loadedItemsContainer .loaded-ctn-input").forEach(i => { ctn += parseFloat(i.value) || 0; });
+  if (ctn) rows.push(["Toplam karton", fmtNum(ctn) + (n.kg ? " (ort. " + fmtNum(Math.round(n.kg / ctn * 100) / 100) + " kg/karton)" : ""), ""]);
   $("calcSummary").innerHTML = rows.map(r => '<div class="calc-row' + (r[2] ? " " + r[2] : "") + '"><span>' + esc(r[0]) + "</span><b>" + esc(r[1]) + "</b></div>").join("");
 }
 function refreshStatusCalc() { syncAutoCost(); updateWeightCheck(); updateCalc(); }
@@ -691,11 +697,13 @@ document.addEventListener("input", e => {
   else if (t.id === "statusUnitPrice" || t.id === "statusExtraCost") refreshStatusCalc();
   else if (t.id === "pfTotal" || t.id === "pfPlanTon" || t.id === "pfPriceKg") updatePfEstimate();
   else if (t.matches && t.matches(".loaded-kg-input")) { syncAutoWeight(); refreshStatusCalc(); }
+  else if (t.matches && t.matches(".loaded-ctn-input")) updateCalc();
   else if (t.matches && t.matches(".order-ton-input")) updateOrderTotal();
   else if (t.id === "pfIncoterm") updateIncotermHelp();
 });
 document.addEventListener("change", e => {
   if (e.target.id === "pfIncoterm") updateIncotermHelp();
+  if (e.target.id === "docsStatus") { const d = $("docsDate"); if (e.target.value === "pending") d.value = ""; else if (!d.value) d.value = todayISO(); }
   if (e.target.id === "statusTotalCost" && !e.target.value.trim()) { e.target.dataset.manual = ""; refreshStatusCalc(); }
 });
 
@@ -749,6 +757,7 @@ function openStatusModal(id) {
   $("statusLoadingDate").value = c.loadingDate || todayISO();
   $("statusShippingLine").value = c.shippingLine || "";
   $("statusBl").value = c.blNo || "";
+  $("statusArrivalDate").value = c.arrivalDate || "";
   $("statusUnitPrice").value = c.unitPrice || (pf && pf.pricePerKg) || "";
   $("statusExtraCost").value = c.extraCost || "";
   $("statusCalcNote").value = c.calcNote || "";
@@ -760,7 +769,7 @@ function openStatusModal(id) {
   const w = $("statusWeightKg");
   w.dataset.manual = c.weightKg ? "1" : "";
   w.value = c.weightKg || "";
-  if (c.loadedItems && c.loadedItems.length) c.loadedItems.forEach(it => addLoadedRow(it.code, it.kg));
+  if (c.loadedItems && c.loadedItems.length) c.loadedItems.forEach(it => addLoadedRow(it.code, it.kg, it.cartons));
   else if (c.orderItems && c.orderItems.length) c.orderItems.forEach(it => addLoadedRow(it.code, Math.round(it.ton * 1000)));
   else addLoadedRow("", "");
   syncAutoWeight();
@@ -783,19 +792,22 @@ async function submitStatus() {
   const unitPrice = parseFloat($("statusUnitPrice").value) || 0;
   const extraCost = parseFloat($("statusExtraCost").value) || 0;
   const calcNote = $("statusCalcNote").value.trim();
+  const arrivalDate = $("statusArrivalDate").value;
   const invoice = parseMoney($("statusTotalCost").value);
   const errEl = $("statusErrorText");
 
-  if (!no || !loadingDate || !shippingLine || !weightKg || !invoice) { errEl.style.display = "block"; return; }
+  if (!no || !loadingDate || !shippingLine || !weightKg || !invoice) { errEl.textContent = "Kırmızı yıldızlı alanların hepsini doldurun."; errEl.style.display = "block"; return; }
   errEl.style.display = "none";
 
   const loadedItems = [];
-  let sum = 0;
+  let sum = 0, missingCtn = false;
   document.querySelectorAll("#loadedItemsContainer .yarn-row").forEach(row => {
     const code = row.querySelector(".loaded-code-input").value.trim().toUpperCase();
     const kg = parseFloat(row.querySelector(".loaded-kg-input").value) || 0;
-    if (code) { loadedItems.push({ code, kg }); sum += kg; }
+    const cartons = parseInt(row.querySelector(".loaded-ctn-input").value, 10) || 0;
+    if (code) { loadedItems.push({ code, kg, cartons }); sum += kg; if (!cartons) missingCtn = true; }
   });
+  if (missingCtn) { errEl.textContent = "Her iplik kalemi için karton adedini yazın."; errEl.style.display = "block"; return; }
 
   const msgs = [];
   if (loadedItems.length && Math.abs(sum - weightKg) >= 0.5) {
@@ -810,7 +822,7 @@ async function submitStatus() {
 
   const c = findC(id);
   if (!c) return;
-  const patch = { no, loadingDate, shippingLine, blNo, weightKg, totalCost: String(round2(invoice)), unitPrice, extraCost, calcNote, loadedItems };
+  const patch = { no, loadingDate, shippingLine, blNo, weightKg, totalCost: String(round2(invoice)), unitPrice, extraCost, calcNote, arrivalDate, loadedItems };
   // Sadece ilk yüklemede yeşile geçer; düzenleme mevcut aşamayı bozmaz
   if (stageOf(c) === "yellow" || stageOf(c) === "white") patch.status = "green";
   updateContainer(id, patch);
@@ -868,6 +880,29 @@ function submitWarehouse() {
   toast("Depoya teslim kaydedildi");
 }
 
+// Evrak durumu: bekleniyor / eksik / tamam
+function openDocsModal(id) {
+  const c = findC(id);
+  if (!c) return;
+  $("docsCntId").value = c.id;
+  $("docsSub").textContent = cntLabel(c);
+  $("docsStatus").value = c.docsStatus || "pending";
+  $("docsDate").value = c.docsDate || "";
+  $("docsNote").value = c.docsNote || "";
+  showModal("modalDocs");
+}
+function submitDocs() {
+  const id = $("docsCntId").value;
+  const status = $("docsStatus").value;
+  let date = $("docsDate").value;
+  if (status === "pending") date = "";
+  else if (!date) date = todayISO();
+  updateContainer(id, { docsStatus: status, docsDate: date, docsNote: $("docsNote").value.trim() });
+  hideModal("modalDocs");
+  renderAll();
+  toast("Evrak durumu kaydedildi");
+}
+
 // Önceki aşamaya alma: menüden, onay penceresiyle. Girilen bilgiler silinmez.
 async function revertStage(id) {
   const c = findC(id);
@@ -898,13 +933,14 @@ function activeContainers() {
 }
 
 function pfStats(pf, list) {
-  const s = { count: list.length, white: 0, yellow: 0, green: 0, red: 0, blue: 0, orderedKg: 0, loadedKg: 0, deliveredKg: 0, money: 0, extra: 0, costKg: 0, estMoney: 0 };
+  const s = { count: list.length, white: 0, yellow: 0, green: 0, red: 0, blue: 0, orderedKg: 0, loadedKg: 0, deliveredKg: 0, money: 0, extra: 0, costKg: 0, estMoney: 0, cartons: 0 };
   list.forEach(c => {
     const st = stageOf(c);
     s[st]++;
     if (st !== "white") s.orderedKg += orderKg(c) || (c.weightKg || 0);
     if (st === "green" || st === "red" || st === "blue") {
       s.loadedKg += bestKg(c);
+      s.cartons += cartonsOf(c);
       const m = parseMoney(c.totalCost);
       if (m) { s.money += m; s.extra += Number(c.extraCost) || 0; s.costKg += bestKg(c); }
     }
@@ -917,7 +953,7 @@ function pfStats(pf, list) {
 function stageMatch(c) { return ui.stage === "all" || stageOf(c) === ui.stage; }
 function haystack(parts) { return parts.filter(Boolean).join(" ").toLocaleLowerCase("tr-TR"); }
 function pfHit(pf) {
-  return haystack([pf.no, pf.supplier, pf.incoterm, pf.loadPort, pf.destPort, pf.note]).includes(ui.q);
+  return haystack([pf.no, pf.supplier, pf.incoterm, pf.note]).includes(ui.q);
 }
 function cHit(c) {
   const items = (c.orderItems || []).concat(c.loadedItems || []).map(i => i.code);
@@ -935,6 +971,18 @@ function visibleContainers(pf, all) {
 // =====================================================
 // 10. ÇİZİM
 // =====================================================
+function docChip(c, archived) {
+  const st = stageOf(c);
+  if (st !== "green" && st !== "red" && st !== "blue") return "";
+  const d = c.docsStatus || "pending";
+  const label = d === "received" ? "Evrak tamam" : d === "partial" ? "Evrak eksik" : "Evrak bekleniyor";
+  const cls = "doc doc-" + d + (st === "red" && d !== "received" ? " doc-alert" : "");
+  const title = [c.docsDate ? fmtDate(c.docsDate) : "", c.docsNote || ""].filter(Boolean).join(" · ");
+  const inner = ic("file") + esc(label) + (d !== "pending" && c.docsDate ? " " + esc(fmtShort(c.docsDate)) : "");
+  if (archived) return '<span class="' + cls + '" title="' + esc(title) + '">' + inner + "</span>";
+  return '<button class="' + cls + '" data-action="openDocs" data-id="' + esc(c.id) + '" title="' + esc(title || "Evrak durumunu değiştir") + '">' + inner + "</button>";
+}
+
 function rowMenu(c) {
   const st = stageOf(c);
   const id = esc(c.id);
@@ -971,12 +1019,12 @@ function renderRow(c, archived) {
   const top = '<span class="stchip">' + STAGE[st].label + "</span>" +
     (c.no ? '<span class="cno">' + esc(c.no) + "</span>" : '<span class="cno cno-empty">' + (st === "white" ? "Detay bekleniyor" : "Konteyner no girilmedi") + "</span>") +
     (c.shippingLine ? '<span class="tag">' + ic("ship") + esc(c.shippingLine) + "</span>" : "") +
-    (c.blNo ? '<span class="tag">B/L ' + esc(c.blNo) + "</span>" : "") + capTag(c);
+    (c.blNo ? '<span class="tag">B/L ' + esc(c.blNo) + "</span>" : "") + capTag(c) + docChip(c, archived);
 
   let items = "";
   const loaded = st === "green" || st === "red" || st === "blue";
   if (loaded && c.loadedItems && c.loadedItems.length) {
-    items = c.loadedItems.map(it => '<span class="yarn"><b>' + esc(it.code) + "</b><span>" + fmtNum(it.kg) + " kg</span></span>").join("");
+    items = c.loadedItems.map(it => '<span class="yarn"><b>' + esc(it.code) + "</b><span>" + fmtNum(it.kg) + " kg</span>" + (it.cartons ? '<span class="ctn">' + fmtNum(it.cartons) + " karton</span>" : "") + "</span>").join("");
   } else if (c.orderItems && c.orderItems.length && st !== "white") {
     items = c.orderItems.map(it => '<span class="yarn"><b>' + esc(it.code) + "</b><span>" + fmtTonRaw(it.ton) + " t</span></span>").join("");
   }
@@ -984,6 +1032,7 @@ function renderRow(c, archived) {
   let meta = "";
   const kg = bestKg(c);
   if (kg) meta += '<div class="num">' + (st === "white" || st === "yellow" ? fmtTon(kg) : fmtNum(kg) + " kg") + '</div><div class="numl">' + (st === "white" || st === "yellow" ? "sipariş" : "net ağırlık") + "</div>";
+  if (loaded && cartonsOf(c)) meta += '<div class="numl">' + fmtNum(cartonsOf(c)) + " karton</div>";
   if (loaded && c.totalCost) meta += '<div class="cost">' + esc(fmtMoney(parseMoney(c.totalCost))) + (c.unitPrice ? '<span class="unit"> · ' + esc(fmtPriceVal(c.unitPrice)) + " $/kg</span>" : "") + "</div>";
   const pfx = findPf(c.pfId);
   if (st === "yellow" && pfx && pfx.pricePerKg && kg) meta += '<div class="est">≈ ' + esc(fmtMoney(kg * pfx.pricePerKg)) + " tahmini</div>";
@@ -1004,7 +1053,7 @@ function renderRow(c, archived) {
   const idx = String(c.order || "").split("/");
   return '<div class="crow s-' + st + '" data-id="' + id + '">' +
     '<div class="c-idx">' + esc((idx[0] || "").trim()) + "<small>/ " + esc((idx[1] || "").trim()) + "</small></div>" +
-    '<div class="c-main"><div class="c-top">' + top + "</div>" + (items ? '<div class="yarns">' + items + "</div>" : "") + "</div>" +
+    '<div class="c-main"><div class="c-top">' + top + "</div>" + (items ? '<div class="yarns">' + items + "</div>" : "") + (loaded && c.docsNote && (c.docsStatus || "pending") !== "received" ? '<div class="docnote">Evrak notu: ' + esc(c.docsNote) + "</div>" : "") + "</div>" +
     '<div class="c-meta">' + meta + "</div>" +
     '<div class="c-dates">' + dateLines(c) + "</div>" +
     '<div class="c-actions">' + actions + "</div>" +
@@ -1032,7 +1081,6 @@ function renderPfCard(pf, opt) {
 
   const meta = [];
   if (pf.date) meta.push("<span>" + ic("calendar") + esc(fmtDate(pf.date)) + "</span>");
-  if (pf.loadPort || pf.destPort) meta.push("<span>" + ic("ship") + esc(pf.loadPort || "?") + ic("arrow") + esc(pf.destPort || "?") + "</span>");
   if (inc) meta.push("<span>" + esc(inc.freight) + "</span>");
   if (pf.planTon) meta.push("<span>Plan: " + fmtTonRaw(pf.planTon) + " t / konteyner</span>");
 
@@ -1053,6 +1101,7 @@ function renderPfCard(pf, opt) {
   const stats = [];
   if (s.orderedKg) stats.push(["Sipariş", fmtTon(s.orderedKg)]);
   if (s.loadedKg) stats.push(["Yüklenen", fmtTon(s.loadedKg)]);
+  if (s.cartons) stats.push(["Karton", fmtNum(s.cartons)]);
   if (s.deliveredKg) stats.push(["Depoya girişi", fmtTon(s.deliveredKg)]);
   if (s.money) stats.push(["Yüklenen tutar", fmtMoney(s.money)]);
   if (s.estMoney) stats.push(["Siparişteki tahmini", fmtMoney(s.estMoney)]);
@@ -1111,19 +1160,25 @@ function renderPipeline() {
 function renderArrivals() {
   const el = $("arrivals");
   if (ui.tab !== "active") { el.hidden = true; return; }
-  const green = activeContainers().filter(c => stageOf(c) === "green");
-  if (!green.length) { el.hidden = true; return; }
+  const act = activeContainers();
+  const green = act.filter(c => stageOf(c) === "green");
+  const portNoDocs = act.filter(c => stageOf(c) === "red" && (c.docsStatus || "pending") !== "received");
+  if (!green.length && !portNoDocs.length) { el.hidden = true; return; }
   el.hidden = false;
-  const withEta = green.filter(c => c.arrivalDate).sort((a, b) => a.arrivalDate.localeCompare(b.arrivalDate));
-  const noEta = green.length - withEta.length;
-  let html = '<span class="arrivals-title">Yaklaşan varışlar</span>';
-  withEta.slice(0, 6).forEach(c => {
-    const d = daysUntil(c.arrivalDate);
-    html += '<span class="arr-chip ' + relClass(d) + '"><b>' + esc(c.supplier) + '</b><span class="mono">' + esc(c.no || "Konteyner " + c.order) + '</span><span class="when">' +
-      esc(fmtShort(c.arrivalDate)) + " " + esc(relDays(d)) + "</span></span>";
-  });
-  if (withEta.length > 6) html += '<span class="arr-chip"><span class="when">+' + (withEta.length - 6) + " konteyner daha</span></span>";
-  if (noEta) html += '<span class="arr-chip warn">' + noEta + " konteynerin tahmini varışı girilmedi</span>";
+  let html = "";
+  if (green.length) {
+    const withEta = green.filter(c => c.arrivalDate).sort((a, b) => a.arrivalDate.localeCompare(b.arrivalDate));
+    const noEta = green.length - withEta.length;
+    html += '<span class="arrivals-title">Yaklaşan varışlar</span>';
+    withEta.slice(0, 6).forEach(c => {
+      const d = daysUntil(c.arrivalDate);
+      html += '<span class="arr-chip ' + relClass(d) + '"><b>' + esc(c.supplier) + '</b><span class="mono">' + esc(c.no || "Konteyner " + c.order) + '</span><span class="when">' +
+        esc(fmtShort(c.arrivalDate)) + " " + esc(relDays(d)) + "</span></span>";
+    });
+    if (withEta.length > 6) html += '<span class="arr-chip"><span class="when">+' + (withEta.length - 6) + " konteyner daha</span></span>";
+    if (noEta) html += '<span class="arr-chip warn">' + noEta + " konteynerin tahmini varışı girilmedi</span>";
+  }
+  if (portNoDocs.length) html += '<span class="arr-chip late"><b>Limanda</b><span class="when">' + portNoDocs.length + " konteynerin evrakı tamam değil</span></span>";
   el.innerHTML = html;
 }
 
@@ -1206,7 +1261,7 @@ function renderAll() {
 function closeMenus() { document.querySelectorAll(".menu-wrap.open").forEach(m => m.classList.remove("open")); }
 
 document.addEventListener("click", e => {
-  if (e.target.classList && e.target.classList.contains("modal") && e.target.id !== "modalConfirm") { hideModal(e.target.id); return; }
+  if (e.target.classList && e.target.classList.contains("modal")) return;   // dışarı tıklamak pencereyi kapatmaz, yazılanlar kaybolmaz
   const el = e.target.closest("[data-action]");
   const wrap = e.target.closest(".menu-wrap");
   if (el && el.dataset.action === "menu") {
@@ -1230,6 +1285,7 @@ document.addEventListener("click", e => {
     case "openArrival": openArrivalModal(id); break;
     case "openWarehouse": openWarehouseModal(id); break;
     case "revert": revertStage(id); break;
+    case "openDocs": openDocsModal(id); break;
     case "archive": toggleArchive(id, true); break;
     case "restore": toggleArchive(id, false); break;
     case "deleteProforma": permanentDeleteProforma(id); break;
@@ -1268,31 +1324,85 @@ function captureActiveCardsAsImage() {
   if (!active.length) { toast("Siparişte, yolda veya limanda konteyner yok.", "err"); return; }
   if (typeof html2canvas === "undefined") { toast("Resim kütüphanesi yüklenemedi. İnternet bağlantısını kontrol edin.", "err"); return; }
 
-  let html = '<div class="rp-head"><h2>Sevkiyat durum raporu</h2><small>' + esc(nowStr()) + " | " + active.length + " konteyner</small></div>";
+  const by = k => active.filter(c => stageOf(c) === k);
+  const sumKg = list => list.reduce((a, c) => a + bestKg(c), 0);
+  const notDone = c => (c.docsStatus || "pending") !== "received";
+  const noDocs = active.filter(c => stageOf(c) !== "yellow" && notDone(c));
+  const now = new Date();
+  const hhmm = String(now.getHours()).padStart(2, "0") + ":" + String(now.getMinutes()).padStart(2, "0");
+
+  const tile = (k, label, list) => '<div class="rp-tile s-' + k + '"><div class="rp-tn">' + list.length + '</div><div class="rp-tl">' + label +
+    '</div><div class="rp-tt">' + (list.length ? fmtTon(sumKg(list)) : "&nbsp;") + "</div></div>";
+  const docCell = c => {
+    const st = stageOf(c);
+    if (st === "yellow") return '<span class="rp-muted">—</span>';
+    const d = c.docsStatus || "pending";
+    if (d === "received") return '<span class="rp-ok">Tamam</span>' + (c.docsDate ? '<div class="rp-line2">' + esc(fmtDate(c.docsDate)) + "</div>" : "");
+    return '<span class="' + (st === "red" ? "rp-late" : "rp-soon") + '">' + (d === "partial" ? "Eksik" : "Bekleniyor") + "</span>" + (c.docsNote ? '<div class="rp-line2">' + esc(c.docsNote) + "</div>" : "");
+  };
+
+  let html = '<div class="rp-top"><div><div class="rp-title">Sevkiyat Durum Raporu</div><div class="rp-sub">Aktif proformalar · sipariş, yol ve liman durumu</div></div>' +
+    '<div class="rp-date">' + esc(fmtDate(todayISO())) + "<small>saat " + hhmm + "</small></div></div>";
+
+  html += '<div class="rp-tiles">' + tile("yellow", "Siparişte", by("yellow")) + tile("green", "Yolda", by("green")) + tile("red", "Limanda", by("red")) +
+    '<div class="rp-tile rp-docs' + (noDocs.length ? " warn" : "") + '"><div class="rp-tn">' + noDocs.length + '</div><div class="rp-tl">Evrakı tamam olmayan</div><div class="rp-tt">yolda ve limanda</div></div></div>';
+
+  // 1) Varış takvimi: limanda olanlar, sonra tahmini varışa göre, tarihsizler en sonda
+  const moving = active.filter(c => stageOf(c) !== "yellow");
+  if (moving.length) {
+    const rank = c => stageOf(c) === "red" ? 0 : (c.arrivalDate ? 1 : 2);
+    moving.sort((a, b) => rank(a) - rank(b) || String(a.arrivalDate || "").localeCompare(String(b.arrivalDate || "")));
+    html += '<div class="rp-h">Varış takvimi</div><table class="rp-table rp-sch"><thead><tr><th>Varış</th><th>Kalan</th><th>Firma / proforma</th><th>Konteyner</th><th style="text-align:right">Net ağırlık</th><th>Evrak</th></tr></thead><tbody>';
+    moving.forEach(c => {
+      const st = stageOf(c);
+      const pf = findPf(c.pfId);
+      let when = '<span class="rp-muted">girilmedi</span>', left = '<span class="rp-muted">—</span>';
+      if (st === "red") { when = c.arrivalDate ? esc(fmtDate(c.arrivalDate)) : "—"; left = '<span class="rp-late">Limanda</span>'; }
+      else if (c.arrivalDate) {
+        const d = daysUntil(c.arrivalDate);
+        when = esc(fmtDate(c.arrivalDate));
+        left = '<span class="' + (d < 0 ? "rp-late" : d <= 3 ? "rp-soon" : "rp-ok") + '">' + esc(relDays(d)) + "</span>";
+      }
+      html += '<tr class="s-' + st + '"><td class="m">' + when + "</td><td>" + left + "</td><td><b>" + esc(c.supplier) + "</b> · " + esc(pf ? pf.no : c.pfNo || "") +
+        '</td><td class="m">' + esc(c.no || "—") + (c.shippingLine ? '<div class="rp-line2">' + esc(c.shippingLine) + "</div>" : "") +
+        '</td><td class="r">' + fmtNum(bestKg(c)) + " kg</td><td>" + docCell(c) + "</td></tr>";
+    });
+    html += "</tbody></table>";
+  }
+
+  // 2) Firma ve proforma ayrıntıları
+  html += '<div class="rp-h">Proforma ayrıntıları</div>';
   companies.forEach(comp => {
     proformas.filter(p => p.supplier === comp && !p.isArchived).sort((a, b) => pfTime(b) - pfTime(a)).forEach(pf => {
       const list = active.filter(c => c.pfId === pf.id).sort(cntSort);
       if (!list.length) return;
-      html += '<div class="rp-pf"><div class="rp-pfhead"><span>' + esc(comp) + "</span><b>" + esc(pf.no) + "</b>" +
+      const total = containers.filter(c => c.pfId === pf.id).length;
+      html += '<div class="rp-pf2"><div class="rp-pfbar"><span class="co">' + esc(comp) + "</span><b>" + esc(pf.no) + "</b>" +
         (pf.incoterm ? "<span>" + esc(pf.incoterm) + "</span>" : "") +
-        (pf.loadPort || pf.destPort ? "<span>" + esc(pf.loadPort || "?") + " &rarr; " + esc(pf.destPort || "?") + "</span>" : "") + "</div>" +
-        '<table class="rp-table"><thead><tr><th>Sıra</th><th>Durum</th><th>Konteyner no</th><th>Hat</th><th>İçerik</th><th>Miktar</th><th>Tarih</th></tr></thead><tbody>';
+        (pf.pricePerKg ? "<span>" + fmtPriceVal(pf.pricePerKg) + " $/kg</span>" : "") +
+        '<span class="sp">' + list.length + " / " + total + " konteyner yolda veya siparişte</span></div>" +
+        '<table class="rp-table"><thead><tr><th>Sıra</th><th>Durum</th><th>Konteyner / hat</th><th>İçerik</th><th style="text-align:right">Net ağırlık</th><th style="text-align:right">Karton</th><th>Varış</th><th>Evrak</th></tr></thead><tbody>';
       list.forEach(c => {
         const st = stageOf(c);
         const loaded = st !== "yellow";
-        const items = (loaded && c.loadedItems && c.loadedItems.length)
-          ? c.loadedItems.map(i => esc(i.code) + ": " + fmtNum(i.kg) + " kg").join("<br>")
-          : (c.orderItems || []).map(i => esc(i.code) + ": " + fmtTonRaw(i.ton) + " t").join("<br>");
-        let date = "";
-        if (st === "yellow") date = "Sipariş " + fmtDate(c.orderDate);
-        else if (st === "green") date = c.arrivalDate ? "Tahmini varış " + fmtDate(c.arrivalDate) : "Yükleme " + fmtDate(c.loadingDate);
-        else date = "Limanda" + (c.arrivalDate ? " " + fmtDate(c.arrivalDate) : "");
-        html += '<tr class="s-' + st + '"><td class="m">' + esc(c.order) + '</td><td><span class="rp-st">' + STAGE[st].label + '</span></td><td class="m">' + esc(c.no || "—") + "</td><td>" + esc(c.shippingLine || "—") + "</td><td>" + items + '</td><td class="r">' +
-          (loaded && c.weightKg ? fmtNum(c.weightKg) + " kg" : fmtTon(bestKg(c))) + "</td><td>" + esc(date) + "</td></tr>";
+        const items = loaded && c.loadedItems && c.loadedItems.length
+          ? c.loadedItems.map(i => '<div class="rp-it"><b>' + esc(i.code) + "</b> <span>" + fmtNum(i.kg) + " kg" + (i.cartons ? " · " + fmtNum(i.cartons) + " karton" : "") + "</span></div>").join("")
+          : (c.orderItems || []).map(i => '<div class="rp-it"><b>' + esc(i.code) + "</b> <span>" + fmtTonRaw(i.ton) + " t</span></div>").join("");
+        let arr;
+        if (st === "yellow") arr = '<span class="rp-muted">Sipariş ' + esc(fmtShort(c.orderDate)) + "</span>";
+        else if (st === "red") arr = '<span class="rp-late">Limanda</span>' + (c.arrivalDate ? '<div class="rp-line2">' + esc(fmtDate(c.arrivalDate)) + "</div>" : "");
+        else if (c.arrivalDate) { const d = daysUntil(c.arrivalDate); arr = esc(fmtDate(c.arrivalDate)) + '<div class="' + (d < 0 ? "rp-late" : d <= 3 ? "rp-soon" : "rp-ok") + '">' + esc(relDays(d)) + "</div>"; }
+        else arr = '<span class="rp-muted">girilmedi</span>';
+        html += '<tr class="s-' + st + '"><td class="m">' + esc(c.order) + '</td><td><span class="rp-st">' + STAGE[st].label + '</span></td><td class="m">' +
+          esc(c.no || "—") + (c.shippingLine ? '<div class="rp-line2">' + esc(c.shippingLine) + (c.blNo ? " · B/L " + esc(c.blNo) : "") + "</div>" : "") +
+          "</td><td>" + items + '</td><td class="r">' + (loaded && c.weightKg ? fmtNum(c.weightKg) + " kg" : fmtTon(bestKg(c))) + '</td><td class="r">' +
+          (loaded && cartonsOf(c) ? fmtNum(cartonsOf(c)) : "—") + "</td><td>" + arr + "</td><td>" + docCell(c) + "</td></tr>";
       });
       html += "</tbody></table></div>";
     });
   });
+
+  html += '<div class="rp-foot"><span>İplik Takip Masası</span><span>' + active.length + " konteyner · " + fmtTon(sumKg(active)) + "</span></div>";
 
   const area = $("printCanvasArea");
   area.innerHTML = html;
@@ -1342,15 +1452,16 @@ async function exportDetailedExcel() {
     { header: "Proforma no", key: "pfNo", width: 16 },
     { header: "Proforma tarihi", key: "pfDate", width: 14 },
     { header: "Teslim şekli", key: "inc", width: 12 },
-    { header: "Yükleme limanı", key: "lp", width: 16 },
-    { header: "Varış limanı", key: "dp", width: 16 },
     { header: "Sıra", key: "order", width: 8 },
     { header: "Konteyner no", key: "no", width: 16 },
     { header: "Hat / acente", key: "line", width: 16 },
     { header: "B/L no", key: "bl", width: 16 },
     { header: "Durum", key: "status", width: 14 },
     { header: "Masa", key: "desk", width: 13 },
+    { header: "Evrak", key: "docs", width: 12 },
+    { header: "Evrak tarihi", key: "docsDate", width: 13 },
     { header: "Net ağırlık (kg)", key: "kg", width: 16 },
+    { header: "Toplam karton", key: "cartons", width: 14 },
     { header: "Fatura tutarı ($)", key: "cost", width: 16 },
     { header: "Birim fiyat ($/kg)", key: "unit", width: 14 },
     { header: "Ek masraf ($)", key: "extra", width: 14 },
@@ -1372,7 +1483,7 @@ async function exportDetailedExcel() {
     cell.border = border;
   });
 
-  let totalKg = 0, ordered = 0, onTheWay = 0, delivered = 0, totalInvoice = 0, totalExtra = 0;
+  let totalKg = 0, ordered = 0, onTheWay = 0, delivered = 0, totalInvoice = 0, totalExtra = 0, totalCartons = 0;
   const bySupplier = {};
 
   rows.forEach(c => {
@@ -1390,18 +1501,18 @@ async function exportDetailedExcel() {
 
     const loaded = st === "green" || st === "red" || st === "blue";
     let items = "";
-    if (loaded && c.loadedItems && c.loadedItems.length) items = c.loadedItems.map(i => i.code + ": " + fmtNum(i.kg) + " kg").join(" | ");
+    if (loaded && c.loadedItems && c.loadedItems.length) items = c.loadedItems.map(i => i.code + ": " + fmtNum(i.kg) + " kg" + (i.cartons ? " / " + fmtNum(i.cartons) + " karton" : "")).join(" | ");
     else if (c.orderItems && c.orderItems.length) items = c.orderItems.map(i => i.code + ": " + fmtTonRaw(i.ton) + " t").join(" | ");
 
     const invoice = parseMoney(c.totalCost), extra = Number(c.extraCost) || 0;
-    totalInvoice += invoice; totalExtra += extra;
+    totalInvoice += invoice; totalExtra += extra; totalCartons += cartonsOf(c);
     const kgForCost = c.weightKg || kg;
     const row = ws.addRow({
       supplier: c.supplier || "", pfNo: c.pfNo || "", pfDate: fmtDate(c.pfDate), inc: pf.incoterm || "—",
-      lp: pf.loadPort || "—", dp: pf.destPort || "—", order: c.order || "",
+      order: c.order || "",
       no: c.no || "—", line: c.shippingLine || "—", bl: c.blNo || "—",
       status: STAGE[st].label, desk: pf.isArchived ? "Arşivde" : "Aktif",
-      kg: kg || null, cost: invoice || null, unit: c.unitPrice || null, extra: extra || null, landed: invoice ? invoice + extra : null, perkg: invoice && kgForCost ? Math.round((invoice + extra) / kgForCost * 10000) / 10000 : null,
+      docs: loaded ? docLabel(c) : "—", docsDate: loaded && c.docsDate ? fmtDate(c.docsDate) : "—", kg: kg || null, cartons: cartonsOf(c) || null, cost: invoice || null, unit: c.unitPrice || null, extra: extra || null, landed: invoice ? invoice + extra : null, perkg: invoice && kgForCost ? Math.round((invoice + extra) / kgForCost * 10000) / 10000 : null,
       orderDate: fmtDate(c.orderDate) || "—", loadDate: fmtDate(c.loadingDate) || "—",
       arrival: fmtDate(c.arrivalDate) || "—", whDate: fmtDate(c.warehouseDate) || "—",
       whName: c.warehouseName || "—", items
@@ -1415,7 +1526,7 @@ async function exportDetailedExcel() {
     ["cost", "extra", "landed"].forEach(k => { row.getCell(k).numFmt = "#,##0.00"; row.getCell(k).alignment = { vertical: "middle", horizontal: "right" }; });
     ["unit", "perkg"].forEach(k => { row.getCell(k).numFmt = "0.0000"; row.getCell(k).alignment = { vertical: "middle", horizontal: "right" }; });
   });
-  ws.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: 24 } };
+  ws.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: 25 } };
 
   const sm = wb.addWorksheet("Özet");
   sm.columns = [{ width: 38 }, { width: 26 }, { width: 18 }];
@@ -1428,6 +1539,7 @@ async function exportDetailedExcel() {
     ["Yolda veya limanda", onTheWay + " konteyner", "D9F3E5"],
     ["Depoya teslim edilen", delivered + " konteyner", "DCE8FB"],
     ["Toplam ağırlık", fmtNum(totalKg) + " kg (" + (totalKg / 1000).toFixed(2) + " ton)", "FFF2CC"],
+    ["Toplam karton", fmtNum(totalCartons) + " adet", "ECEFF2"],
     ["Toplam fatura tutarı", fmtMoney(totalInvoice), "DCE8FB"],
     ["Toplam maliyet (fatura + ek masraf)", fmtMoney(totalInvoice + totalExtra), "DCE8FB"]
   ].forEach(l => {

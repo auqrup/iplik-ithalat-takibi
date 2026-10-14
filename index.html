@@ -32,7 +32,6 @@
       </div>
 
       <div class="top-actions">
-        <button class="btn btn-primary" data-action="newProforma">+ Yeni proforma</button>
         <div class="menu-wrap">
           <button class="btn btn-ghost" data-action="menu">Rapor al</button>
           <div class="menu">
@@ -103,10 +102,6 @@
         </div>
         <p class="help" id="pfIncotermHelp" style="font-size:12px; color:var(--muted); margin:-6px 0 12px;"></p>
         <div class="row2">
-          <div class="f"><label for="pfLoadPort">Yükleme limanı</label><input type="text" id="pfLoadPort" placeholder="Örn: Mundra"></div>
-          <div class="f"><label for="pfDestPort">Varış limanı</label><input type="text" id="pfDestPort" placeholder="Örn: Mersin"></div>
-        </div>
-        <div class="row2">
           <div class="f"><label for="pfTotal">Konteyner sayısı <span class="req">*</span></label><input type="number" id="pfTotal" value="3" min="1"></div>
           <div class="f"><label for="pfPlanTon">Konteyner başına plan (ton)</label><input type="number" step="0.1" id="pfPlanTon" value="22"></div>
         </div>
@@ -156,7 +151,8 @@
           <div class="f"><label for="statusShippingLine">Hat / nakliye firması <span class="req">*</span></label><input type="text" id="statusShippingLine" placeholder="MSC, MAERSK..."></div>
           <div class="f"><label for="statusBl">B/L no</label><input type="text" id="statusBl" placeholder="İsteğe bağlı"></div>
         </div>
-        <span class="flabel">Yüklenen iplik / renk kodu ve net kilo (kg)</span>
+        <div class="f"><label for="statusArrivalDate">Tahmini varış tarihi <span class="opt">(isteğe bağlı)</span></label><input type="date" id="statusArrivalDate"></div>
+        <span class="flabel">Yüklenen iplik / renk kodu, net kilo (kg) ve karton adedi <span class="req">*</span></span>
         <div id="loadedItemsContainer" style="margin-top:6px;"></div>
         <button class="btn btn-ghost btn-sm" type="button" onclick="addLoadedRow('', '')" style="margin-bottom:12px;">+ Satır ekle</button>
         <div class="f"><label for="statusWeightKg">Toplam net kilo (kg) <span class="req">*</span></label><input type="number" step="1" id="statusWeightKg" placeholder="Kalemlerden otomatik dolar"></div>
@@ -207,6 +203,30 @@
         <div class="f"><label for="whDateInput">Teslim tarihi <span class="req">*</span></label><input type="date" id="whDateInput"></div>
         <div class="f"><label for="whNameSelect">Teslim alan depo</label><select id="whNameSelect"></select></div>
         <button class="btn btn-primary btn-block" onclick="submitWarehouse()">Depoya teslimi kaydet</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Evrak -->
+  <div id="modalDocs" class="modal">
+    <div class="sheet narrow">
+      <div class="sheet-head">
+        <div><h3>Konteyner evrakları</h3><p class="sheet-sub" id="docsSub"></p></div>
+        <button class="icon-btn" onclick="hideModal('modalDocs')" aria-label="Kapat">✕</button>
+      </div>
+      <div class="sheet-body">
+        <input type="hidden" id="docsCntId">
+        <div class="f">
+          <label for="docsStatus">Evrak durumu</label>
+          <select id="docsStatus">
+            <option value="pending">Bekleniyor</option>
+            <option value="partial">Geldi ama eksik var</option>
+            <option value="received">Tamam, hepsi geldi</option>
+          </select>
+        </div>
+        <div class="f"><label for="docsDate">Geliş tarihi</label><input type="date" id="docsDate"></div>
+        <div class="f"><label for="docsNote">Not</label><textarea id="docsNote" placeholder="Örn: Orijinal B/L ve fatura geldi, menşe belgesi eksik"></textarea></div>
+        <button class="btn btn-primary btn-block" onclick="submitDocs()">Evrak durumunu kaydet</button>
       </div>
     </div>
   </div>
