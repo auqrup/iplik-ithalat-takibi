@@ -88,6 +88,19 @@ body { margin:0; background:var(--page); color:var(--ink); font-family:var(--fon
 .empty { padding:40px 0; text-align:center; color:var(--muted); }
 
 
+/* ---------- Yaklaşan konteynerler ---------- */
+.near { background:#fff; border:1px solid var(--steel); border-top:5px solid var(--st-green); border-radius:6px; padding:10px 12px 12px; margin-bottom:16px; }
+.near h3 { margin:0 0 8px; font-size:15px; font-weight:800; font-stretch:85%; display:flex; align-items:baseline; gap:8px; }
+.near h3 small { font-weight:500; color:var(--muted); font-size:12px; }
+.soon-list { display:flex; flex-wrap:wrap; gap:8px; }
+.soon-i { font:inherit; text-align:left; cursor:pointer; background:var(--st-green-bg); border:1px solid var(--steel); border-left:7px solid var(--st-green); border-radius:4px; padding:6px 10px; display:flex; flex-direction:column; gap:1px; min-width:170px; color:var(--ink); }
+.soon-i:hover { box-shadow:0 2px 8px rgba(18,40,58,.25); }
+.soon-i b { font-family:var(--mono); font-size:13px; }
+.soon-i span { font-size:12px; color:var(--ink-2); }
+.soon-i .d { font-weight:700; }
+.soon-i .d.late { color:var(--bad); } .soon-i .d.soon { color:var(--st-yellow-ink); } .soon-i .d.ok { color:var(--good); }
+.soon-none { color:var(--muted); font-size:13px; }
+
 /* ---------- Özet pano: ince sütunlar + dikey kutular ---------- */
 .board { display:flex; flex-wrap:wrap; gap:14px; align-items:flex-start; }
 .col { width:92px; display:flex; flex-direction:column; gap:7px; }
@@ -95,8 +108,8 @@ body { margin:0; background:var(--page); color:var(--ink); font-family:var(--fon
 .colh b { display:block; font-family:var(--mono); font-size:12.5px; line-height:1.15; word-break:break-all; }
 .colh small { display:block; color:#aebdca; font-size:10.5px; margin-top:2px; }
 .colh .arc { background:#27465f; border-radius:8px; padding:0 6px; }
-.sq { width:92px; height:84px; background:var(--bg); border:1px solid var(--steel); border-left:9px solid var(--c); border-radius:3px; display:flex; align-items:center; justify-content:center; flex-direction:column; cursor:pointer; font-family:var(--mono); font-weight:800; font-size:28px; line-height:1; padding:0; color:var(--ink); transition:transform .08s, box-shadow .08s; }
-.sq small { font-size:12px; font-weight:600; color:var(--ink-2); margin-top:3px; }
+.sq { width:92px; height:84px; background:var(--bg); border:1px solid var(--steel); border-left:9px solid var(--c); border-radius:3px; display:flex; align-items:center; justify-content:center; flex-direction:row; gap:5px; white-space:nowrap; cursor:pointer; font-family:var(--mono); font-weight:800; font-size:30px; line-height:1; padding:0; color:var(--ink); transition:transform .08s, box-shadow .08s; }
+.sq small { font-size:17px; font-weight:600; color:var(--ink-2); margin-top:5px; }
 .sq:hover { transform:translateY(-2px); box-shadow:0 4px 12px rgba(18,40,58,.25); }
 .sq.sel { outline:3px solid var(--ink); outline-offset:1px; }
 .legend { display:flex; flex-wrap:wrap; gap:6px 14px; font-size:12px; color:var(--ink-2); margin:-6px 0 16px; align-items:center; }
@@ -116,7 +129,21 @@ body { margin:0; background:var(--page); color:var(--ink); font-family:var(--fon
 #pdfArea .cards { grid-template-columns:repeat(5,1fr); gap:10px; }
 #pdfArea .card { min-height:270px; }
 #pdfArea .card.s-white { min-height:110px; }
-#pdfArea .pfbar { margin:0 0 10px; }
+#pdfArea .pfbar { margin:0 0 8px; }
+.rt { width:100%; border-collapse:separate; border-spacing:0 4px; font-size:13px; }
+.rt th { background:var(--ink); color:#fff; text-align:left; font-weight:600; font-size:11.5px; letter-spacing:.3px; padding:7px 9px; }
+.rt th:first-child { border-radius:4px 0 0 4px; } .rt th:last-child { border-radius:0 4px 4px 0; }
+.rt td { background:var(--bg); padding:7px 9px; vertical-align:middle; border-top:1px solid var(--steel); border-bottom:1px solid var(--steel); }
+.rt td:first-child { border-left:9px solid var(--c); border-top-left-radius:3px; border-bottom-left-radius:3px; white-space:nowrap; }
+.rt td:last-child { border-right:1px solid var(--steel); border-top-right-radius:3px; border-bottom-right-radius:3px; }
+.rt .ixn { font-family:var(--mono); font-weight:800; font-size:17px; white-space:nowrap; }
+.rt .ixn small { font-size:12px; font-weight:600; color:var(--ink-2); margin-left:3px; }
+.rt .stc { font-weight:700; font-size:11.5px; padding:1px 8px; border:1px solid var(--c); border-radius:3px; background:#fff; white-space:nowrap; }
+.rt .cno { font-family:var(--mono); font-weight:700; }
+.rt .sub { font-size:11px; color:var(--ink-2); }
+.rt .num { font-family:var(--mono); font-weight:700; white-space:nowrap; text-align:right; }
+.rt td.items { font-size:12px; }
+.rp-sumline { color:var(--ink-2); font-size:13px; margin:-4px 0 4px; }
 .rp-top { display:flex; justify-content:space-between; align-items:flex-end; border-bottom:4px solid var(--ink); padding-bottom:12px; margin-bottom:14px; }
 .rp-title { font-size:30px; font-weight:800; font-stretch:80%; line-height:1.05; }
 .rp-sub { color:var(--muted); font-size:13px; margin-top:4px; }
@@ -280,6 +307,16 @@ function pfBarHtml(pf, n) {
     '<span class="sp">' + n + " konteyner</span></div>";
 }
 
+function soonHtml(list) {
+  const way = list.filter(c => stageOf(c) === "green").sort((a, b) => String(a.arrivalDate || "9999").localeCompare(String(b.arrivalDate || "9999")));
+  const items = way.map(c => {
+    const pf = findPf(c.pfId) || {}, d = c.arrivalDate ? daysUntil(c.arrivalDate) : null;
+    return '<button class="soon-i" data-cid="' + esc(c.id) + '"><b>' + esc(c.no || "No yok") + "</b><span>" + esc(pf.no || "") + " · " + esc(String(c.order || "").replace(/\s+/g, "")) + "</span><span>" +
+      (c.arrivalDate ? esc(fmtDate(c.arrivalDate)) + ' · <span class="d ' + (d < 0 ? "late" : d <= 3 ? "soon" : "ok") + '">' + esc(relDays(d)) + "</span>" : '<span class="d">Varış tarihi girilmedi</span>') + "</span></button>";
+  }).join("");
+  return '<div class="near"><h3>Yaklaşan konteynerler <small>' + (way.length ? way.length + " konteyner yolda" : "") + "</small></h3>" +
+    (way.length ? '<div class="soon-list">' + items + "</div>" : '<div class="soon-none">Şu an yolda konteyner yok.</div>') + "</div>";
+}
 function tilesHtml(list) {
   return '<div class="tiles">' + STAGE_ORDER.map(k => {
     const l = list.filter(c => stageOf(c) === k);
@@ -307,7 +344,7 @@ function render() {
   let html = '<div class="head"><h2>' + esc(current) + '</h2><span class="meta">' + pfs.length + " proforma · " + list.length + " konteyner" + (kg ? " · " + fmtTon(kg) : "") + "</span>" +
     '<div class="sp"><label class="chk"><input type="checkbox" id="chkArc"' + (showArchive ? " checked" : "") + "> Arşivdekileri de göster</label>" +
     '<button class="btn" id="pdfBtn">' + esc(current) + " — PDF raporu</button></div></div>";
-  html += tilesHtml(list);
+  html += soonHtml(list);
   if (!pfs.length) html += '<div class="empty">Bu firmada gösterilecek proforma yok.</div>';
   html += '<div class="legend">' + STAGE_ORDER.map(k => '<span class="s-' + k + '"><i></i>' + STAGE[k].label + "</span>").join("") + '<span class="hint">Kutunun üzerine gelin veya tıklayın: detaylar sağda açılır</span></div>';
   html += '<div class="board">' + pfs.map(pf => {
@@ -330,13 +367,13 @@ function showPanel(id, pin) {
 }
 function hidePanel() { pinned = ""; $("panel").classList.remove("open"); document.querySelectorAll(".sq.sel").forEach(e => e.classList.remove("sel")); }
 const canHover = window.matchMedia && matchMedia("(hover:hover)").matches;
-document.addEventListener("mouseover", e => { const q = e.target.closest(".sq"); if (q && canHover && !pinned) showPanel(q.dataset.cid, false); });
-document.addEventListener("mouseout", e => { const q = e.target.closest(".sq"); if (q && canHover && !pinned && !(e.relatedTarget && e.relatedTarget.closest && e.relatedTarget.closest(".sq"))) $("panel").classList.remove("open"), q.classList.remove("sel"); });
+document.addEventListener("mouseover", e => { const q = e.target.closest(".sq,.soon-i"); if (q && canHover && !pinned) showPanel(q.dataset.cid, false); });
+document.addEventListener("mouseout", e => { const q = e.target.closest(".sq,.soon-i"); if (q && canHover && !pinned && !(e.relatedTarget && e.relatedTarget.closest && e.relatedTarget.closest(".sq,.soon-i"))) $("panel").classList.remove("open"), q.classList.remove("sel"); });
 document.addEventListener("keydown", e => { if (e.key === "Escape") hidePanel(); });
 
 document.addEventListener("click", e => {
   if (e.target.closest("[data-close]")) { hidePanel(); return; }
-  const sq = e.target.closest(".sq");
+  const sq = e.target.closest(".sq,.soon-i");
   if (sq) { if (pinned === sq.dataset.cid) hidePanel(); else { pinned = sq.dataset.cid; showPanel(pinned, true); } return; }
   if (pinned && !e.target.closest("#panel")) hidePanel();
   const chip = e.target.closest(".chip");
@@ -357,11 +394,37 @@ function exportPdf() {
   const hhmm = String(now.getHours()).padStart(2, "0") + ":" + String(now.getMinutes()).padStart(2, "0");
   const kg = list.reduce((a, c) => a + bestKg(c), 0);
 
+  const rowHtml = c => {
+    const st = stageOf(c), isL = st === "green" || st === "red" || st === "blue";
+    const idx = String(c.order || "").split("/");
+    const its = isL && c.loadedItems && c.loadedItems.length ? c.loadedItems.map(i => esc(i.code) + " <span class=\"sub\">" + fmtNum(i.kg) + " kg</span>")
+      : (st === "white" ? [] : (c.orderItems || []).map(i => esc(i.code) + " <span class=\"sub\">" + fmtTonRaw(i.ton) + " t</span>"));
+    const kgv = bestKg(c);
+    let when = "";
+    if (st === "white") when = '<span class="muted">Detay bekleniyor</span>';
+    else if (st === "yellow") when = '<span class="muted">' + (c.orderDate ? "Sipariş " + esc(fmtDate(c.orderDate)) : "Siparişte") + "</span>";
+    else if (st === "green") { const d = c.arrivalDate ? daysUntil(c.arrivalDate) : null; when = c.arrivalDate ? "<b>" + esc(fmtDate(c.arrivalDate)) + '</b> <span class="' + (d < 0 ? "late" : d <= 3 ? "soon" : "ok") + '">' + esc(relDays(d)) + "</span>" : '<span class="muted">Varış tarihi yok</span>'; }
+    else if (st === "red") when = "<b>Limanda</b>" + (c.arrivalDate ? " " + esc(fmtDate(c.arrivalDate)) : "");
+    else when = "<b>" + esc(c.warehouseName || "Depo") + "</b> " + esc(fmtDate(c.warehouseDate));
+    const dsv = c.docsStatus || "pending";
+    const doc = isL ? '<span class="' + (dsv === "received" ? "ok" : st === "red" ? "late" : "soon") + '">' + docLabel(c) + "</span>" : '<span class="muted">—</span>';
+    return '<tr class="s-' + st + '"><td><span class="ixn">' + esc((idx[0] || "").trim()) + "<small>/ " + esc((idx[1] || "").trim()) + "</small></span></td>" +
+      '<td><span class="stc">' + STAGE[st].label + "</span></td>" +
+      '<td><div class="cno">' + (c.no ? esc(c.no) : '<span class="muted">—</span>') + "</div>" + (c.shippingLine ? '<div class="sub">' + esc(c.shippingLine) + "</div>" : "") + "</td>" +
+      '<td class="items">' + (its.length ? its.join("<br>") : '<span class="muted">—</span>') + "</td>" +
+      '<td class="num">' + (kgv ? (isL && c.weightKg ? fmtNum(c.weightKg) + " kg" : fmtTon(kgv)) : "—") + "</td>" +
+      "<td>" + when + "</td><td>" + doc + "</td></tr>";
+  };
+  const thead = "<thead><tr><th>No</th><th>Durum</th><th>Konteyner</th><th>İplik</th><th style=\"text-align:right\">Miktar</th><th>Varış / Durum</th><th>Evrak</th></tr></thead>";
+
   const units = [];
-  units.push('<div class="rp-top"><div><div class="rp-title">' + esc(comp) + ' — Sevkiyat Raporu</div><div class="rp-sub">' + pfs.length + " proforma · " + list.length + " konteyner" + (kg ? " · " + fmtTon(kg) : "") + '</div></div><div class="rp-date">' + esc(fmtDate(todayISO())) + "<small>saat " + hhmm + "</small></div></div>" + tilesHtml(list));
+  units.push('<div class="rp-top"><div><div class="rp-title">' + esc(comp) + '</div><div class="rp-sub">Sevkiyat durumu</div></div><div class="rp-date">' + esc(fmtDate(todayISO())) + "<small>saat " + hhmm + "</small></div></div>" +
+    '<div class="rp-sumline">' + pfs.length + " proforma · " + list.length + " konteyner" + (kg ? " · " + fmtTon(kg) : "") + "</div>");
   pfs.forEach(pf => {
     const l = list.filter(c => c.pfId === pf.id).sort(byIndex);
-    for (let r = 0; r < l.length; r += 5) units.push((r === 0 ? pfBarHtml(pf, l.length) : "") + '<div class="cards">' + l.slice(r, r + 5).map(cardHtml).join("") + "</div>");
+    for (let r = 0; r < l.length; r += 12) {
+      units.push((r === 0 ? pfBarHtml(pf, l.length) : "") + '<table class="rt">' + thead + "<tbody>" + l.slice(r, r + 12).map(rowHtml).join("") + "</tbody></table>");
+    }
   });
 
   const area = $("pdfArea"), btn = $("pdfBtn");
