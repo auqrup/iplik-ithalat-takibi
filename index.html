@@ -10,6 +10,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
@@ -32,12 +33,13 @@
       </div>
 
       <div class="top-actions">
+        <a class="btn btn-ghost" href="viewer.html" title="Sadece görüntüleme: özet pano">Genel bakış</a>
         <button class="btn btn-ghost" id="backupBtn" data-action="backup">Yedek al</button>
         <div class="menu-wrap">
           <button class="btn btn-ghost" data-action="menu">Rapor al</button>
           <div class="menu">
             <button data-action="exportExcel">Excel dosyası (.xlsx)</button>
-            <button data-action="exportImage">Resim olarak (PNG)</button>
+            <button data-action="exportPdf">PDF olarak</button>
           </div>
         </div>
         <button class="btn btn-ghost" data-action="openCompanies">Firmalar</button>

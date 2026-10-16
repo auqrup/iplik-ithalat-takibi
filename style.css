@@ -364,3 +364,10 @@ button.doc:hover { filter: brightness(.96); }
 .rp-ok { color: var(--st-green-ink); font-weight: 700; }
 .rp-muted { color: var(--muted); }
 .rp-foot { margin-top: 12px; padding-top: 8px; border-top: 1px solid var(--steel); color: var(--muted); font-size: 12px; display: flex; justify-content: space-between; }
+
+.rp-unit { padding-bottom: 2px; background: #fff; }
+.rp-unit .rp-co:first-child { margin-top: 0; }
+.rp-card.s-white { min-height: 92px; }
+.rp-unit .rp-cards { padding: 8px 0 2px; }
+
+a.btn { text-decoration: none; }

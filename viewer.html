@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sevkiyat Görüntüleyici</title>
+<meta name="robots" content="noindex,nofollow">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<style>
+:root {
+  --ink:#12283a; --ink-2:#40566a; --muted:#6b7e90; --steel:#c3ccd5; --steel-soft:#e1e6eb; --paper:#fff; --page:#e8ecf0;
+  --font:"Archivo",system-ui,-apple-system,"Segoe UI",sans-serif; --mono:"Inter","Archivo",system-ui,sans-serif;
+  --st-white:#c3ccd5;  --st-white-bg:#ffffff;
+  --st-yellow:#f2b01e; --st-yellow-bg:#fff0c9; --st-yellow-ink:#7a5200;
+  --st-green:#2f6fd6;  --st-green-bg:#dce8fb;  --st-green-ink:#1a4a9c;
+  --st-red:#8f9aa7;    --st-red-bg:#e4e8ec;    --st-red-ink:#3f4a56;
+  --st-blue:#d64545;   --st-blue-bg:#fbdedc;   --st-blue-ink:#9a2222;
+  --good:#12793f; --bad:#b42318;
+}
+* { box-sizing: border-box; }
+body { margin:0; background:var(--page); color:var(--ink); font-family:var(--font); font-size:14px; line-height:1.4; }
+.s-white  { --c:var(--st-white);  --bg:var(--st-white-bg); }
+.s-yellow { --c:var(--st-yellow); --bg:var(--st-yellow-bg); }
+.s-green  { --c:var(--st-green);  --bg:var(--st-green-bg); }
+.s-red    { --c:var(--st-red);    --bg:var(--st-red-bg); }
+.s-blue   { --c:var(--st-blue);   --bg:var(--st-blue-bg); }
+
+.top { background:var(--ink); color:#fff; padding:12px 18px; display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+.top h1 { margin:0; font-size:18px; font-weight:800; font-stretch:85%; letter-spacing:.2px; }
+.top small { color:#aebdca; display:block; font-size:12px; font-weight:400; }
+.badge { margin-left:auto; font-size:12px; padding:3px 10px; border-radius:20px; background:#27465f; color:#cfe0ee; }
+.badge.ok { background:#14532d; color:#bbf7d0; }
+.badge.off { background:#7f1d1d; color:#fecaca; }
+.wrap { max-width:1500px; margin:0 auto; padding:16px 18px 40px; }
+
+.chips { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:14px; }
+.chip { font:inherit; font-weight:600; border:1px solid var(--steel); background:#fff; color:var(--ink-2); padding:8px 16px; border-radius:22px; cursor:pointer; }
+.chip.on { background:var(--ink); border-color:var(--ink); color:#fff; }
+.chip span { opacity:.6; margin-left:6px; font-family:var(--mono); font-size:12px; }
+
+.head { display:flex; align-items:center; gap:14px; flex-wrap:wrap; margin-bottom:12px; }
+.head h2 { margin:0; font-size:28px; font-weight:800; font-stretch:80%; }
+.head .meta { color:var(--muted); }
+.head .sp { margin-left:auto; display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+.chk { display:flex; align-items:center; gap:6px; color:var(--ink-2); font-size:13px; cursor:pointer; }
+.btn { font:inherit; font-weight:700; background:var(--ink); color:#fff; border:0; padding:9px 16px; border-radius:7px; cursor:pointer; }
+.btn:disabled { opacity:.5; cursor:wait; }
+
+.tiles { display:grid; grid-template-columns:repeat(5,1fr); gap:10px; margin-bottom:18px; }
+.tile { background:var(--bg); border:1px solid var(--steel); border-top:6px solid var(--c); border-radius:6px; padding:8px 12px 10px; }
+.tile b { display:block; font-size:32px; font-weight:800; font-stretch:75%; line-height:1; }
+.tile .l { font-size:13px; font-weight:700; margin-top:3px; }
+.tile .t { font-family:var(--mono); font-size:12px; color:var(--ink-2); min-height:16px; }
+
+.pfbar { display:flex; align-items:center; flex-wrap:wrap; gap:6px 14px; background:var(--steel-soft); border-left:8px solid var(--ink); padding:8px 14px; margin:18px 0 10px; font-size:13px; }
+.pfbar b { font-family:var(--mono); font-size:16px; }
+.pfbar .sp { margin-left:auto; color:var(--ink-2); }
+.pfbar .arc { background:#fff; border:1px solid var(--steel); padding:0 8px; border-radius:10px; font-size:11px; }
+
+.cards { display:grid; grid-template-columns:repeat(auto-fill,minmax(235px,1fr)); gap:12px; }
+.card { background:var(--bg); border:1px solid var(--steel); border-left:9px solid var(--c); padding:10px 11px; min-height:250px; display:flex; flex-direction:column; gap:5px; }
+.card.s-white { min-height:110px; }
+.ch { display:flex; justify-content:space-between; align-items:center; gap:6px; }
+.ix { font-family:var(--mono); font-size:24px; font-weight:800; line-height:1; white-space:nowrap; }
+.ix small { font-size:15px; font-weight:600; color:var(--ink-2); margin-left:3px; }
+.st { font-weight:700; padding:1px 8px; border-radius:3px; border:1px solid var(--c); background:#fff; font-size:11px; white-space:nowrap; }
+.cn { font-family:var(--mono); font-weight:700; font-size:15px; }
+.cl { font-size:12px; color:var(--ink-2); }
+.items { margin-top:2px; font-size:12px; }
+.it { margin-bottom:4px; }
+.it b { display:block; font-family:var(--mono); font-weight:600; font-size:12px; }
+.it span { color:var(--ink-2); }
+.sum { margin-top:auto; border-top:1px dashed #9aa9b8; padding-top:6px; font-size:12px; }
+.w { font-weight:800; font-size:14px; }
+.money { font-family:var(--mono); font-weight:700; color:var(--good); }
+.money small { color:var(--ink-2); font-weight:500; }
+.dr { display:flex; justify-content:space-between; gap:8px; }
+.dr span:first-child { color:var(--muted); }
+.late { color:var(--bad); font-weight:700; } .soon { color:var(--st-yellow-ink); font-weight:700; } .ok { color:var(--good); font-weight:700; }
+.muted { color:var(--muted); }
+.note { font-size:11px; color:var(--ink-2); font-style:italic; }
+.empty { padding:40px 0; text-align:center; color:var(--muted); }
+
+
+/* ---------- Özet pano: ince sütunlar + dikey kutular ---------- */
+.board { display:flex; flex-wrap:wrap; gap:14px; align-items:flex-start; }
+.col { width:92px; display:flex; flex-direction:column; gap:7px; }
+.colh { background:var(--ink); color:#fff; padding:7px 6px 6px; text-align:center; border-radius:5px 5px 0 0; }
+.colh b { display:block; font-family:var(--mono); font-size:12.5px; line-height:1.15; word-break:break-all; }
+.colh small { display:block; color:#aebdca; font-size:10.5px; margin-top:2px; }
+.colh .arc { background:#27465f; border-radius:8px; padding:0 6px; }
+.sq { width:92px; height:84px; background:var(--bg); border:1px solid var(--steel); border-left:9px solid var(--c); border-radius:3px; display:flex; align-items:center; justify-content:center; flex-direction:column; cursor:pointer; font-family:var(--mono); font-weight:800; font-size:28px; line-height:1; padding:0; color:var(--ink); transition:transform .08s, box-shadow .08s; }
+.sq small { font-size:12px; font-weight:600; color:var(--ink-2); margin-top:3px; }
+.sq:hover { transform:translateY(-2px); box-shadow:0 4px 12px rgba(18,40,58,.25); }
+.sq.sel { outline:3px solid var(--ink); outline-offset:1px; }
+.legend { display:flex; flex-wrap:wrap; gap:6px 14px; font-size:12px; color:var(--ink-2); margin:-6px 0 16px; align-items:center; }
+.legend i { display:inline-block; width:12px; height:12px; border-radius:2px; vertical-align:-2px; margin-right:5px; background:var(--bg); border:1px solid var(--steel); border-left:5px solid var(--c); }
+.hint { color:var(--muted); margin-left:auto; }
+#panel { position:fixed; top:0; right:0; bottom:0; width:340px; max-width:100%; background:#fff; border-left:1px solid var(--steel); box-shadow:-8px 0 24px rgba(18,40,58,.18); z-index:50; transform:translateX(104%); transition:transform .16s ease; overflow:auto; padding:14px 14px 24px; }
+#panel.open { transform:none; }
+#panel .px { position:sticky; top:0; float:right; border:0; background:var(--steel-soft); width:30px; height:30px; border-radius:15px; font-size:18px; line-height:1; cursor:pointer; color:var(--ink); z-index:2; }
+#panel .pfl { font-size:12px; color:var(--ink-2); margin-bottom:10px; padding-right:36px; }
+#panel .pfl b { font-family:var(--mono); font-size:15px; color:var(--ink); display:block; }
+#panel .card { min-height:0; }
+#panel .card.s-white { min-height:0; }
+#panel .pin { font-size:11px; color:var(--muted); margin-top:10px; }
+
+/* PDF çıktısı için gizli alan */
+#pdfArea { position:fixed; left:-9999px; top:-9999px; width:1200px; background:#fff; padding:28px 34px 20px; font-size:14px; }
+#pdfArea .cards { grid-template-columns:repeat(5,1fr); gap:10px; }
+#pdfArea .card { min-height:270px; }
+#pdfArea .card.s-white { min-height:110px; }
+#pdfArea .pfbar { margin:0 0 10px; }
+.rp-top { display:flex; justify-content:space-between; align-items:flex-end; border-bottom:4px solid var(--ink); padding-bottom:12px; margin-bottom:14px; }
+.rp-title { font-size:30px; font-weight:800; font-stretch:80%; line-height:1.05; }
+.rp-sub { color:var(--muted); font-size:13px; margin-top:4px; }
+.rp-date { text-align:right; font-family:var(--mono); font-size:15px; font-weight:600; }
+.rp-date small { display:block; color:var(--muted); font-family:var(--font); font-weight:400; font-size:12px; }
+.rp-unit { background:#fff; padding-bottom:2px; }
+
+@media (max-width:720px) {
+  .tiles { grid-template-columns:repeat(2,1fr); }
+  .head h2 { font-size:24px; }
+  .head .sp { margin-left:0; width:100%; }
+  .cards { grid-template-columns:1fr 1fr; }
+  #panel { width:100%; top:auto; height:62%; border-left:0; border-top:1px solid var(--steel); transform:translateY(104%); }
+  #panel.open { transform:none; }
+  .hint { display:none; }
+}
+@media (max-width:460px) { .cards { grid-template-columns:1fr; } }
+</style>
+</head>
+<body>
+<div class="top">
+  <div><h1>Sevkiyat Görüntüleyici</h1><small>Sadece görüntüleme — veri değiştirilemez</small></div>
+  <span class="badge" id="badge">Bağlanıyor…</span>
+</div>
+<div class="wrap">
+  <div class="chips" id="chips"></div>
+  <div id="view"><div class="empty">Veriler yükleniyor…</div></div>
+</div>
+<div id="panel" aria-live="polite"></div>
+<div id="pdfArea"></div>
+
+<script>
+/* =====================================================
+   SADECE OKUMA: bu sayfa Firestore'a hiçbir şey YAZMAZ.
+   Yalnızca onSnapshot (dinleme) kullanılır; set/update/delete/add yoktur.
+   ===================================================== */
+const firebaseConfig = {
+  apiKey: "AIzaSyCwwSwyzbCKYj2D7JEwtQe13rT_8IPg7O8",
+  authDomain: "yarn-tracking-65734.firebaseapp.com",
+  projectId: "yarn-tracking-65734",
+  storageBucket: "yarn-tracking-65734.firebasestorage.app",
+  messagingSenderId: "493441372255",
+  appId: "1:493441372255:web:14bc6e52f15feca8724bea"
+};
+
+const STAGE = {
+  white:  { label: "Sipariş bekleyen" },
+  yellow: { label: "Siparişte" },
+  green:  { label: "Yolda" },
+  red:    { label: "Limanda" },
+  blue:   { label: "Depoda" }
+};
+const STAGE_ORDER = ["white", "yellow", "green", "red", "blue"];
+
+let proformas = [], containers = [];
+let current = "";          // seçili firma
+let showArchive = false;
+let loaded = { p: false, c: false };
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
+const fmtNum = n => Number(n || 0).toLocaleString("tr-TR");
+const fmtTon = kg => (Number(kg || 0) / 1000).toLocaleString("tr-TR", { maximumFractionDigits: 2 }) + " t";
+const fmtTonRaw = t => Number(t || 0).toLocaleString("tr-TR", { maximumFractionDigits: 3 });
+const fmtMoney = n => Number(n || 0).toLocaleString("tr-TR", { maximumFractionDigits: 2 }) + " $";
+const fmtPrice = n => Number(n || 0).toLocaleString("tr-TR", { maximumFractionDigits: 4 });
+const round2 = n => Math.round(n * 100) / 100;
+function fmtDate(iso) { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso || ""); return m ? m[3] + "." + m[2] + "." + m[1] : (iso || ""); }
+function todayISO() { const d = new Date(); return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); }
+function daysUntil(iso) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso || ""); if (!m) return null;
+  const n = new Date(); const today = new Date(n.getFullYear(), n.getMonth(), n.getDate());
+  return Math.round((new Date(+m[1], +m[2] - 1, +m[3]) - today) / 86400000);
+}
+const relDays = d => d === 0 ? "bugün" : d > 0 ? d + " gün kaldı" : Math.abs(d) + " gün gecikti";
+function parseMoney(v) { if (typeof v === "number") return v; const s = String(v || "").replace(/[^0-9.,-]/g, ""); if (!s) return 0; const t = s.includes(",") && s.includes(".") ? s.replace(/,/g, "") : (/^\d{1,3}(\.\d{3})+$/.test(s) ? s.replace(/\./g, "") : s.replace(",", ".")); return parseFloat(t) || 0; }
+
+const stageOf = c => STAGE[c.status] ? c.status : "white";
+const findPf = id => proformas.find(p => p.id === id);
+const byIndex = (a, b) => (a.orderIndex || 0) - (b.orderIndex || 0);
+const pfOrder = (a, b) => String(a.date || "9999-99-99").localeCompare(String(b.date || "9999-99-99")) || ((a.timestamp || 0) - (b.timestamp || 0));
+const orderKg = c => c.weightTon ? Math.round(c.weightTon * 1000) : 0;
+const bestKg = c => { const s = stageOf(c); return (s === "white" || s === "yellow") ? orderKg(c) : (c.weightKg || orderKg(c)); };
+const cartonsOf = c => (c.loadedItems || []).reduce((a, i) => a + (Number(i.cartons) || 0), 0);
+const unitOf = c => { const p = findPf(c.pfId); return (p && Number(p.pricePerKg)) || Number(c.unitPrice) || 0; };
+const costOf = c => { const kg = Number(c.weightKg) || 0, u = unitOf(c); return kg && u ? round2(kg * u) : parseMoney(c.totalCost); };
+const docLabel = c => { const d = c.docsStatus || "pending"; return d === "received" ? "Tamam" : d === "partial" ? "Eksik" : "Bekleniyor"; };
+
+/* ---------- Firebase: sadece dinle ---------- */
+function setBadge(text, cls) { const b = $("badge"); b.textContent = text; b.className = "badge " + (cls || ""); }
+try {
+  firebase.initializeApp(firebaseConfig);
+  const db = firebase.firestore();
+  const listen = (name, apply) => db.collection(name).onSnapshot({ includeMetadataChanges: true }, snap => {
+    if (snap.empty && snap.metadata.fromCache) return;          // doğrulanmamış boş sonuç
+    apply(snap.docs.map(d => Object.assign({}, d.data(), { id: d.id })));
+    setBadge(snap.metadata.fromCache ? "Çevrimdışı (önbellek)" : "Canlı", snap.metadata.fromCache ? "off" : "ok");
+    render();
+  }, err => { console.warn(err); setBadge("Okunamadı", "off"); $("view").innerHTML = '<div class="empty">Veriler okunamadı. İnternet bağlantısını kontrol edin.</div>'; });
+  listen("yarn_proformas", d => { proformas = d; loaded.p = true; });
+  listen("yarn_containers", d => { containers = d; loaded.c = true; });
+} catch (e) {
+  console.error(e); setBadge("Bağlantı yok", "off");
+  $("view").innerHTML = '<div class="empty">Firebase yüklenemedi.</div>';
+}
+
+/* ---------- Görünüm ---------- */
+function companyList() {
+  const set = new Set(proformas.map(p => p.supplier).filter(Boolean));
+  return [...set].sort((a, b) => a.localeCompare(b, "tr"));
+}
+function visiblePfs(comp) {
+  return proformas.filter(p => p.supplier === comp && (showArchive || !p.isArchived)).sort(pfOrder);
+}
+
+function cardHtml(c) {
+  const st = stageOf(c);
+  const isLoaded = st === "green" || st === "red" || st === "blue";
+  const kg = bestKg(c);
+  const idx = String(c.order || "").split("/");
+
+  let items = [];
+  if (isLoaded && c.loadedItems && c.loadedItems.length) items = c.loadedItems.map(i => [i.code, fmtNum(i.kg) + " kg" + (i.cartons ? " · " + fmtNum(i.cartons) + " karton" : "")]);
+  else if (st !== "white") items = (c.orderItems || []).map(i => [i.code, fmtTonRaw(i.ton) + " t"]);
+
+  const rows = [];
+  const dr = (l, v) => rows.push('<div class="dr"><span>' + esc(l) + "</span><span>" + v + "</span></div>");
+  if (c.orderDate) dr("Sipariş", esc(fmtDate(c.orderDate)));
+  if (c.loadingDate) dr("Yükleme", esc(fmtDate(c.loadingDate)));
+  if (c.arrivalDate) {
+    const d = daysUntil(c.arrivalDate);
+    const lbl = st === "red" || st === "blue" ? "Varış" : "ETA";
+    dr(lbl, "<b>" + esc(fmtDate(c.arrivalDate)) + "</b>" + (st === "green" && d !== null ? ' <span class="' + (d < 0 ? "late" : d <= 3 ? "soon" : "ok") + '">' + esc(relDays(d)) + "</span>" : ""));
+  } else if (st === "green") dr("ETA", '<span class="muted">girilmedi</span>');
+  if (st === "red") dr("Durum", "<b>Limanda</b>");
+  if (st === "blue") dr("Depo", "<b>" + esc(c.warehouseName || "") + "</b> " + esc(fmtDate(c.warehouseDate)));
+  if (isLoaded) dr("Evrak", '<span class="' + ((c.docsStatus || "pending") === "received" ? "ok" : st === "red" ? "late" : "soon") + '">' + docLabel(c) + "</span>" + (c.docsDate ? " " + esc(fmtDate(c.docsDate)) : ""));
+
+  const cost = isLoaded ? costOf(c) : 0, extra = Number(c.extraCost) || 0, u = unitOf(c);
+  let money = "";
+  if (cost) money = '<div class="money">' + esc(fmtMoney(cost)) + (u ? ' <small>· ' + esc(fmtPrice(u)) + " $/kg</small>" : "") + "</div>" +
+    (extra ? '<div class="dr"><span>Ek masraf</span><span>' + esc(fmtMoney(extra)) + "</span></div>" : "");
+
+  return '<div class="card s-' + st + '"><div class="ch"><span class="ix">' + esc((idx[0] || "").trim()) + "<small>/ " + esc((idx[1] || "").trim()) + '</small></span><span class="st">' + STAGE[st].label + "</span></div>" +
+    '<div class="cn">' + (c.no ? esc(c.no) : '<span class="muted">Konteyner no yok</span>') + "</div>" +
+    (c.shippingLine || c.blNo ? '<div class="cl">' + esc(c.shippingLine || "") + (c.blNo ? " · B/L " + esc(c.blNo) : "") + "</div>" : "") +
+    (items.length ? '<div class="items">' + items.map(i => '<div class="it"><b>' + esc(i[0]) + "</b><span>" + esc(i[1]) + "</span></div>").join("") + "</div>" : "") +
+    '<div class="sum">' + (kg ? '<div class="w">' + (isLoaded && c.weightKg ? fmtNum(c.weightKg) + " kg" : fmtTon(kg)) + (cartonsOf(c) ? " · " + fmtNum(cartonsOf(c)) + " karton" : "") + "</div>" : "") +
+    money + rows.join("") +
+    (c.calcNote ? '<div class="note">' + esc(c.calcNote) + "</div>" : "") +
+    (st === "white" ? '<div class="muted">Detay bekleniyor</div>' : "") + "</div></div>";
+}
+
+function pfBarHtml(pf, n) {
+  return '<div class="pfbar"><b>' + esc(pf.no) + "</b>" + (pf.incoterm ? "<span>" + esc(pf.incoterm) + "</span>" : "") +
+    (pf.date ? "<span>" + esc(fmtDate(pf.date)) + "</span>" : "") +
+    (pf.pricePerKg ? "<span>" + fmtPrice(pf.pricePerKg) + " $/kg</span>" : "") +
+    (pf.planTon ? "<span>Plan: " + fmtTonRaw(pf.planTon) + " t / konteyner</span>" : "") +
+    (pf.note ? '<span class="muted">' + esc(pf.note) + "</span>" : "") +
+    (pf.isArchived ? '<span class="arc">Arşiv</span>' : "") +
+    '<span class="sp">' + n + " konteyner</span></div>";
+}
+
+function tilesHtml(list) {
+  return '<div class="tiles">' + STAGE_ORDER.map(k => {
+    const l = list.filter(c => stageOf(c) === k);
+    const kg = l.reduce((a, c) => a + bestKg(c), 0);
+    return '<div class="tile s-' + k + '"><b>' + l.length + '</b><div class="l">' + STAGE[k].label + '</div><div class="t">' + (l.length && kg ? fmtTon(kg) : "&nbsp;") + "</div></div>";
+  }).join("") + "</div>";
+}
+
+function render() {
+  if (!loaded.p || !loaded.c) return;
+  const comps = companyList();
+  if (!comps.length) { $("chips").innerHTML = ""; $("view").innerHTML = '<div class="empty">Gösterilecek veri yok.</div>'; return; }
+  if (!comps.includes(current)) current = comps[0];
+
+  $("chips").innerHTML = comps.map(c => {
+    const n = containers.filter(x => x.supplier === c && (showArchive || !(findPf(x.pfId) || {}).isArchived)).length;
+    return '<button class="chip' + (c === current ? " on" : "") + '" data-comp="' + esc(c) + '">' + esc(c) + "<span>" + n + "</span></button>";
+  }).join("");
+
+  const pfs = visiblePfs(current);
+  const ids = new Set(pfs.map(p => p.id));
+  const list = containers.filter(c => ids.has(c.pfId));
+  const kg = list.reduce((a, c) => a + bestKg(c), 0);
+
+  let html = '<div class="head"><h2>' + esc(current) + '</h2><span class="meta">' + pfs.length + " proforma · " + list.length + " konteyner" + (kg ? " · " + fmtTon(kg) : "") + "</span>" +
+    '<div class="sp"><label class="chk"><input type="checkbox" id="chkArc"' + (showArchive ? " checked" : "") + "> Arşivdekileri de göster</label>" +
+    '<button class="btn" id="pdfBtn">' + esc(current) + " — PDF raporu</button></div></div>";
+  html += tilesHtml(list);
+  if (!pfs.length) html += '<div class="empty">Bu firmada gösterilecek proforma yok.</div>';
+  html += '<div class="legend">' + STAGE_ORDER.map(k => '<span class="s-' + k + '"><i></i>' + STAGE[k].label + "</span>").join("") + '<span class="hint">Kutunun üzerine gelin veya tıklayın: detaylar sağda açılır</span></div>';
+  html += '<div class="board">' + pfs.map(pf => {
+    const l = list.filter(c => c.pfId === pf.id).sort(byIndex);
+    return '<div class="col"><div class="colh"><b>' + esc(pf.no) + "</b><small>" + esc(fmtDate(pf.date)) + "</small>" + (pf.isArchived ? '<small><span class="arc">Arşiv</span></small>' : "") + "</div>" +
+      l.map(c => { const ix = String(c.order || "").split("/"); return '<button class="sq s-' + stageOf(c) + '" data-cid="' + esc(c.id) + '" title="' + esc(STAGE[stageOf(c)].label) + '">' + esc((ix[0] || "").trim()) + "<small>/ " + esc((ix[1] || "").trim()) + "</small></button>"; }).join("") + "</div>";
+  }).join("") + "</div>";
+  $("view").innerHTML = html;
+}
+
+/* ---------- Sağ detay paneli: üzerine gelince önizleme, tıklayınca sabitlenir ---------- */
+let pinned = "";
+function showPanel(id, pin) {
+  const c = containers.find(x => x.id === id); if (!c) return;
+  const pf = findPf(c.pfId) || {};
+  $("panel").innerHTML = '<button class="px" data-close="1" aria-label="Kapat">×</button><div class="pfl"><b>' + esc(pf.no || "") + "</b>" + esc([pf.incoterm, fmtDate(pf.date), pf.pricePerKg ? fmtPrice(pf.pricePerKg) + " $/kg" : ""].filter(Boolean).join(" · ")) + (pf.note ? "<br>" + esc(pf.note) : "") + "</div>" + cardHtml(c) + (pin ? "" : '<div class="pin">Sabitlemek için tıklayın</div>');
+  $("panel").classList.add("open");
+  document.querySelectorAll(".sq.sel").forEach(e => e.classList.remove("sel"));
+  const q = document.querySelector('.sq[data-cid="' + (window.CSS && CSS.escape ? CSS.escape(id) : id) + '"]'); if (q) q.classList.add("sel");
+}
+function hidePanel() { pinned = ""; $("panel").classList.remove("open"); document.querySelectorAll(".sq.sel").forEach(e => e.classList.remove("sel")); }
+const canHover = window.matchMedia && matchMedia("(hover:hover)").matches;
+document.addEventListener("mouseover", e => { const q = e.target.closest(".sq"); if (q && canHover && !pinned) showPanel(q.dataset.cid, false); });
+document.addEventListener("mouseout", e => { const q = e.target.closest(".sq"); if (q && canHover && !pinned && !(e.relatedTarget && e.relatedTarget.closest && e.relatedTarget.closest(".sq"))) $("panel").classList.remove("open"), q.classList.remove("sel"); });
+document.addEventListener("keydown", e => { if (e.key === "Escape") hidePanel(); });
+
+document.addEventListener("click", e => {
+  if (e.target.closest("[data-close]")) { hidePanel(); return; }
+  const sq = e.target.closest(".sq");
+  if (sq) { if (pinned === sq.dataset.cid) hidePanel(); else { pinned = sq.dataset.cid; showPanel(pinned, true); } return; }
+  if (pinned && !e.target.closest("#panel")) hidePanel();
+  const chip = e.target.closest(".chip");
+  if (chip) { hidePanel(); current = chip.dataset.comp; render(); window.scrollTo(0, 0); return; }
+  if (e.target.id === "pdfBtn") exportPdf();
+});
+document.addEventListener("change", e => { if (e.target.id === "chkArc") { showArchive = e.target.checked; render(); } });
+
+/* ---------- Seçili firma için PDF ---------- */
+function exportPdf() {
+  if (typeof html2canvas === "undefined" || !window.jspdf) { alert("PDF kütüphanesi yüklenemedi. İnternet bağlantısını kontrol edin."); return; }
+  const comp = current;
+  const pfs = visiblePfs(comp);
+  const ids = new Set(pfs.map(p => p.id));
+  const list = containers.filter(c => ids.has(c.pfId));
+  if (!list.length) { alert("Bu firmada konteyner yok."); return; }
+  const now = new Date();
+  const hhmm = String(now.getHours()).padStart(2, "0") + ":" + String(now.getMinutes()).padStart(2, "0");
+  const kg = list.reduce((a, c) => a + bestKg(c), 0);
+
+  const units = [];
+  units.push('<div class="rp-top"><div><div class="rp-title">' + esc(comp) + ' — Sevkiyat Raporu</div><div class="rp-sub">' + pfs.length + " proforma · " + list.length + " konteyner" + (kg ? " · " + fmtTon(kg) : "") + '</div></div><div class="rp-date">' + esc(fmtDate(todayISO())) + "<small>saat " + hhmm + "</small></div></div>" + tilesHtml(list));
+  pfs.forEach(pf => {
+    const l = list.filter(c => c.pfId === pf.id).sort(byIndex);
+    for (let r = 0; r < l.length; r += 5) units.push((r === 0 ? pfBarHtml(pf, l.length) : "") + '<div class="cards">' + l.slice(r, r + 5).map(cardHtml).join("") + "</div>");
+  });
+
+  const area = $("pdfArea"), btn = $("pdfBtn");
+  if (btn) { btn.disabled = true; btn.textContent = "Hazırlanıyor…"; }
+  area.innerHTML = units.map(u => '<div class="rp-unit">' + u + "</div>").join("");
+  const done = () => { area.innerHTML = ""; render(); };
+  Promise.all([...area.querySelectorAll(".rp-unit")].map(el => html2canvas(el, { scale: 2, useCORS: true, backgroundColor: "#ffffff" }))).then(cvs => {
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+    const PW = 297, PH = 210, M = 9, W = PW - 2 * M, maxY = PH - M - 8, GAP = 3;
+    let y = M;
+    cvs.forEach(cv => {
+      const h = cv.height * W / cv.width;
+      if (y + h > maxY && y > M) { pdf.addPage(); y = M; }
+      pdf.addImage(cv.toDataURL("image/jpeg", 0.92), "JPEG", M, y, W, Math.min(h, maxY - M));
+      y += h + GAP;
+    });
+    const n = pdf.getNumberOfPages();
+    pdf.setFontSize(8); pdf.setTextColor(110, 122, 135);
+    const ascii = s => s.replace(/İ/g, "I").replace(/ı/g, "i").replace(/[ğĞ]/g, m => m === "ğ" ? "g" : "G").replace(/[şŞ]/g, m => m === "ş" ? "s" : "S").replace(/[çÇ]/g, m => m === "ç" ? "c" : "C").replace(/[öÖ]/g, m => m === "ö" ? "o" : "O").replace(/[üÜ]/g, m => m === "ü" ? "u" : "U");
+    for (let p = 1; p <= n; p++) {
+      pdf.setPage(p);
+      pdf.text(ascii(comp) + "  |  " + fmtDate(todayISO()) + " " + hhmm, M, PH - 6);
+      pdf.text("Sayfa " + p + " / " + n, PW - M, PH - 6, { align: "right" });
+    }
+    pdf.save(ascii(comp).replace(/[^A-Za-z0-9_-]+/g, "_") + "_Sevkiyat_Raporu_" + todayISO() + ".pdf");
+    done();
+  }).catch(err => { alert("PDF oluşturulamadı: " + err); done(); });
+}
+</script>
+</body>
+</html>
