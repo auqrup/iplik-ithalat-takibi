@@ -33,6 +33,7 @@
       </div>
 
       <div class="top-actions">
+        <button class="btn btn-ghost" id="bellBtn" data-action="openActivity" title="Son değişiklikler">Bildirimler<span class="bell-n" id="bellN" hidden></span></button>
         <a class="btn btn-ghost" href="viewer.html" title="Sadece görüntüleme: özet pano">Genel bakış</a>
         <button class="btn btn-ghost" id="backupBtn" data-action="backup">Yedek al</button>
         <div class="menu-wrap">
@@ -227,6 +228,28 @@
         <div class="f"><label for="docsNote">Not</label><textarea id="docsNote" placeholder="Örn: Orijinal B/L ve fatura geldi, menşe belgesi eksik"></textarea></div>
         <button class="btn btn-primary btn-block" onclick="submitDocs()">Evrak durumunu kaydet</button>
       </div>
+    </div>
+  </div>
+
+  <!-- Son değişiklikler -->
+  <div id="modalActivity" class="modal">
+    <div class="sheet">
+      <div class="sheet-head">
+        <div><h3>Son değişiklikler</h3><p class="sheet-sub">Yapılan ekleme ve değişiklikler, tarihiyle</p></div>
+        <button class="icon-btn" onclick="hideModal('modalActivity')" aria-label="Kapat">✕</button>
+      </div>
+      <div class="sheet-body" id="activityList"></div>
+    </div>
+  </div>
+
+  <!-- Konteyner detayı -->
+  <div id="modalDetail" class="modal">
+    <div class="sheet">
+      <div class="sheet-head">
+        <div><h3 id="detailTitle"></h3><p class="sheet-sub" id="detailSub"></p></div>
+        <button class="icon-btn" onclick="hideModal('modalDetail')" aria-label="Kapat">✕</button>
+      </div>
+      <div class="sheet-body" id="detailBody"></div>
     </div>
   </div>
 

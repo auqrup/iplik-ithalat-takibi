@@ -145,7 +145,7 @@ const firebaseConfig = {
 };
 
 let db = null;
-let companiesCol, proformasCol, containersCol;
+let companiesCol, proformasCol, containersCol, activityCol;
 
 try {
   firebase.initializeApp(firebaseConfig);
@@ -154,6 +154,7 @@ try {
   companiesCol = db.collection("yarn_companies");
   proformasCol = db.collection("yarn_proformas");
   containersCol = db.collection("yarn_containers");
+  activityCol = db.collection("yarn_activity");
 } catch (err) {
   db = null;
   console.warn("Firebase kullanılamıyor, yerel mod:", err);
@@ -197,6 +198,8 @@ let companyDocs = [];
 let companies = [];
 let proformas = loadData("app_proformas_v1", []);
 let containers = loadData("app_containers_v1", []);
+let activity = loadData("app_activity_v1", []);
+const DEVICE = (() => { let d = loadData("app_device_id", ""); if (!d) { d = "d" + Math.random().toString(36).slice(2, 8); saveData("app_device_id", d); } return d; })();
 
 function setCompanies(docs) {
   companyDocs = docs.slice().sort((a, b) => (companyTime(a) - companyTime(b)) || String(a.name).localeCompare(String(b.name), "tr"));
@@ -208,6 +211,7 @@ function cacheAll() {
   saveData("app_companies_v2", companyDocs);
   saveData("app_proformas_v1", proformas);
   saveData("app_containers_v1", containers);
+  saveData("app_activity_v1", activity);
 }
 
 // Ekran durumu (filtreler, açık/kapalı bölümler)
@@ -249,6 +253,88 @@ function updateContainer(id, patch) {
   Object.assign(c, patch);
   cacheAll();
   remoteSet(containersCol, id, patch);
+}
+
+// =====================================================
+// Değişiklik kaydı (bildirimler) ve konteyner detayı
+// =====================================================
+function logAct(text, kind) {
+  const at = Date.now();
+  const e = { id: "act_" + at + "_" + Math.random().toString(36).slice(2, 5), at, text, kind: kind || "", by: DEVICE };
+  activity.unshift(e);
+  activity = activity.slice(0, 200);
+  saveData("app_activity_v1", activity);
+  remoteSet(activityCol, e.id, e);
+  renderBell();
+}
+const pad2 = n => String(n).padStart(2, "0");
+function fmtDateTime(ts) { const d = new Date(ts); return pad2(d.getDate()) + "." + pad2(d.getMonth() + 1) + "." + d.getFullYear() + " " + pad2(d.getHours()) + ":" + pad2(d.getMinutes()); }
+function unseenCount() { const seen = loadData("app_act_seen", 0); return activity.filter(e => e.at > seen && e.by !== DEVICE).length; }
+function renderBell() {
+  const b = $("bellN"); if (!b) return;
+  const n = unseenCount();
+  b.hidden = !n; b.textContent = n > 99 ? "99+" : n;
+}
+function openActivity() {
+  const prev = loadData("app_act_seen", 0);
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const dayLabel = ts => { const d = new Date(ts); d.setHours(0, 0, 0, 0); const diff = Math.round((today - d) / 86400000); return diff === 0 ? "Bugün" : diff === 1 ? "Dün" : fmtDateTime(ts).slice(0, 10); };
+  let html = "", last = "";
+  activity.slice(0, 80).forEach(e => {
+    const dl = dayLabel(e.at);
+    if (dl !== last) { html += '<div class="act-day">' + esc(dl) + "</div>"; last = dl; }
+    const isNew = e.at > prev && e.by !== DEVICE;
+    html += '<div class="act-i k-' + esc(e.kind || "x") + (isNew ? " new" : "") + '"><span class="act-t">' + esc(fmtDateTime(e.at).slice(11)) + '</span><span class="act-x">' + esc(e.text) + "</span>" + (isNew ? '<span class="act-new">yeni</span>' : "") + "</div>";
+  });
+  $("activityList").innerHTML = html || '<p class="sheet-sub">Henüz kayıtlı değişiklik yok. Bundan sonraki ekleme ve değişiklikler burada tarihiyle görünür.</p>';
+  saveData("app_act_seen", Date.now());
+  renderBell();
+  showModal("modalActivity");
+}
+
+function detailHtml(c) {
+  const st = stageOf(c), pf = findPf(c.pfId) || {};
+  const loaded = st === "green" || st === "red" || st === "blue";
+  const rows = [];
+  const R = (l, v) => { if (v !== "" && v != null) rows.push('<div class="dt-r"><span>' + esc(l) + "</span><b>" + v + "</b></div>"); };
+  R("Aşama", '<span class="stchip">' + STAGE[st].label + "</span>");
+  R("Konteyner no", c.no ? esc(c.no) : "");
+  R("Hat / nakliye", esc(c.shippingLine || ""));
+  R("B/L no", esc(c.blNo || ""));
+  const kg = loaded ? Number(c.weightKg) || 0 : orderKg(c);
+  R(loaded ? "Net kilo" : "Planlanan miktar", kg ? (loaded ? fmtNum(kg) + " kg" : fmtTon(kg)) : "");
+  R("Karton", cartonsOf(c) ? fmtNum(cartonsOf(c)) : "");
+  const cost = loaded ? costOf(c) : 0, u = unitOf(c), extra = Number(c.extraCost) || 0;
+  R("Kilo fiyatı", u ? fmtPriceVal(u) + " $/kg" : "");
+  R("Toplam tutar", cost ? fmtMoney(cost) : "");
+  R("Ek masraf", extra ? fmtMoney(extra) : "");
+  R("Hesap notu", esc(c.calcNote || ""));
+  R("Sipariş tarihi", c.orderDate ? esc(fmtDate(c.orderDate)) : "");
+  R("Yükleme tarihi", c.loadingDate ? esc(fmtDate(c.loadingDate)) : "");
+  if (c.arrivalDate) { const d = daysUntil(c.arrivalDate); R(st === "green" ? "Tahmini varış" : "Varış", esc(fmtDate(c.arrivalDate)) + (st === "green" && d !== null ? ' <span class="' + relClass(d) + '">(' + esc(relDays(d)) + ")</span>" : "")); }
+  else if (st === "green") R("Tahmini varış", '<span class="muted">girilmedi</span>');
+  if (st === "blue") R("Depo teslimi", esc((c.warehouseName || "") + " " + fmtDate(c.warehouseDate)));
+  if (loaded) R("Evrak", esc(docLabel(c)) + (c.docsDate ? " · " + esc(fmtDate(c.docsDate)) : ""));
+  R("Evrak notu", esc(c.docsNote || ""));
+  const items = loaded && c.loadedItems && c.loadedItems.length ? c.loadedItems.map(i => [i.code, fmtNum(i.kg) + " kg", i.cartons ? fmtNum(i.cartons) + " karton" : ""])
+    : (c.orderItems || []).map(i => [i.code, fmtTonRaw(i.ton) + " t", ""]);
+  const tbl = items.length ? '<div class="dt-h">İplik kalemleri</div><table class="dt-items">' + items.map(i => "<tr><td>" + esc(i[0]) + "</td><td>" + esc(i[1]) + "</td><td>" + esc(i[2]) + "</td></tr>").join("") + "</table>" : "";
+  return '<div class="dt s-' + st + '">' + rows.join("") + tbl + "</div>";
+}
+function showCntDetail(id) {
+  const c = findC(id); if (!c) return;
+  const pf = findPf(c.pfId) || {};
+  $("detailTitle").textContent = "Konteyner " + c.order + (c.no ? " · " + c.no : "");
+  $("detailSub").textContent = (pf.supplier || c.supplier || "") + " / " + (pf.no || c.pfNo || "") + (pf.incoterm ? " · " + pf.incoterm : "");
+  $("detailBody").innerHTML = detailHtml(c) + '<button class="btn btn-ghost btn-block" style="margin-top:14px;" data-action="goRow" data-id="' + esc(c.id) + '">Listede göster</button>';
+  showModal("modalDetail");
+}
+function goRow(id) {
+  hideModal("modalDetail");
+  ui.tab = "active"; ui.stage = "all"; ui.q = ""; ui.company = "all"; $("searchInput").value = "";
+  renderAll();
+  const row = document.querySelector('.crow[data-id="' + (window.CSS && CSS.escape ? CSS.escape(id) : id) + '"]');
+  if (row) { row.scrollIntoView({ behavior: "smooth", block: "center" }); row.classList.add("flash"); setTimeout(() => row.classList.remove("flash"), 2200); }
 }
 
 function blankContainer(pf, idx, total, stamp) {
@@ -373,6 +459,7 @@ function addCompany() {
   updateCompanyList();
   renderAll();
   toast(val + " eklendi");
+  logAct("Firma eklendi — " + val, "pf");
   remoteSet(companiesCol, id, { name: val, order, createdAt: serverTs() });
 }
 
@@ -389,6 +476,7 @@ async function removeCompany(name) {
   cacheAll();
   updateCompanyList();
   renderAll();
+  logAct("Firma silindi — " + name, "del");
   if (doc) remoteDelete(companiesCol, doc.id);
 }
 
@@ -526,6 +614,7 @@ async function saveProforma() {
     hideModal("modalProforma");
     renderAll();
     toast(diff > 0 ? "Proforma güncellendi, " + diff + " konteyner eklendi" : diff < 0 ? "Proforma güncellendi, " + removed.length + " konteyner silindi" : "Proforma güncellendi");
+    logAct("Proforma düzenlendi — " + p.supplier + " / " + no + (diff > 0 ? " (+" + diff + " konteyner)" : diff < 0 ? " (−" + removed.length + " konteyner)" : ""), "pf");
     remoteBatch(b => {
       b.set(proformasCol.doc(p.id), patch, { merge: true });
       removed.forEach(c => b.delete(containersCol.doc(c.id)));
@@ -550,6 +639,7 @@ async function saveProforma() {
   ui.tab = "active";
   renderAll();
   toast(no + " oluşturuldu, " + total + " konteyner eklendi");
+  logAct("Yeni proforma — " + supplier + " / " + no + " (" + total + " konteyner)", "pf");
 
   remoteBatch(b => {
     b.set(proformasCol.doc(pf.id), Object.assign({}, pf, { createdAt: serverTs() }));
@@ -570,6 +660,7 @@ function addContainerToProforma(pfId) {
   cacheAll();
   renderAll();
   toast("Konteyner eklendi (" + list.length + " adet)");
+  logAct("Konteyner eklendi — " + pf.supplier + " / " + pf.no + " (" + list.length + " adet)", "pf");
   remoteBatch(b => {
     b.set(proformasCol.doc(pf.id), { total: pf.total }, { merge: true });
     list.forEach(c => {
@@ -590,18 +681,21 @@ async function toggleArchive(pfId, archive) {
   cacheAll();
   renderAll();
   toast(archive ? "Arşive taşındı" : "Panoya alındı");
+  logAct((archive ? "Arşive taşındı" : "Panoya alındı") + " — " + p.supplier + " / " + p.no, "pf");
   remoteSet(proformasCol, pfId, { isArchived: archive });
 }
 
 function permanentDeleteProforma(id) {
   requestPinProtectedAction(() => {
-    if (!findPf(id)) return;
+    const pfx = findPf(id);
+    if (!pfx) return;
     const cntIds = containers.filter(c => c.pfId === id).map(c => c.id);
     proformas = proformas.filter(p => p.id !== id);
     containers = containers.filter(c => c.pfId !== id);
     cacheAll();
     renderAll();
     toast("Proforma kalıcı olarak silindi");
+    logAct("Proforma silindi — " + pfx.supplier + " / " + pfx.no, "del");
     remoteBatch(b => {
       b.delete(proformasCol.doc(id));
       cntIds.forEach(cid => b.delete(containersCol.doc(cid)));
@@ -614,6 +708,7 @@ function permanentDeleteContainer(id) {
     const c = findC(id);
     if (!c) return;
     const pf = findPf(c.pfId);
+    const lbl = cntLabel(c);
     containers = containers.filter(x => x.id !== id);
     const remaining = renumber(c.pfId);
     const pfGone = pf && remaining.length === 0;
@@ -622,6 +717,7 @@ function permanentDeleteContainer(id) {
     cacheAll();
     renderAll();
     toast("Konteyner kalıcı olarak silindi");
+    logAct("Konteyner silindi — " + lbl, "del");
     remoteBatch(b => {
       b.delete(containersCol.doc(id));
       if (pfGone) b.delete(proformasCol.doc(pf.id));
@@ -796,6 +892,7 @@ async function submitOrder() {
   const patch = { orderItems: items, weightTon: Math.round(totalTon * 1000) / 1000, orderDate };
   if (stageOf(c) === "white") patch.status = "yellow";   // ilerlemiş konteyner aşamasını korur
   updateContainer(id, patch);
+  logAct("Sipariş girildi — " + cntLabel(c) + " · " + items.map(i => i.code + " " + fmtTonRaw(i.ton) + " t").join(", "), "order");
   hideModal("modalOrder");
   renderAll();
   toast("Sipariş kaydedildi");
@@ -871,8 +968,10 @@ async function submitStatus() {
   if (!c) return;
   const patch = { no, loadingDate, shippingLine, blNo, weightKg, totalCost: n.calc ? String(n.calc) : "", unitPrice: n.unit, extraCost, calcNote, arrivalDate, loadedItems };
   // Sadece ilk yüklemede yeşile geçer; düzenleme mevcut aşamayı bozmaz
-  if (stageOf(c) === "yellow" || stageOf(c) === "white") patch.status = "green";
+  const firstLoad = stageOf(c) === "yellow" || stageOf(c) === "white";
+  if (firstLoad) patch.status = "green";
   updateContainer(id, patch);
+  logAct((firstLoad ? "Yüklendi, yola çıktı" : "Yükleme bilgisi güncellendi") + " — " + cntLabel(c) + " · " + no + " · " + fmtTonRaw(weightKg / 1000) + " t", "load");
   hideModal("modalStatus");
   renderAll();
   toast("Yükleme kaydedildi");
@@ -895,6 +994,7 @@ async function submitArrival() {
   const atPort = $("arrivalAtPort").checked;
   if (!(await confirmSave("modalArrival"))) return;
   updateContainer(id, { arrivalDate: $("arrivalDateInput").value, status: atPort ? "red" : "green" });
+  logAct((atPort ? "Limana ulaştı" : "Tahmini varış girildi (" + fmtDate($("arrivalDateInput").value) + ")") + " — " + cntLabel(c), "port");
   hideModal("modalArrival");
   renderAll();
   toast(atPort ? "Limana ulaştı olarak işaretlendi" : "Varış tarihi kaydedildi");
@@ -924,6 +1024,7 @@ async function submitWarehouse() {
   const patch = { status: "blue", warehouseDate: whDate, warehouseName: whName };
   if (stageOf(c) !== "blue") patch.statusBeforeWarehouse = c.status;   // geri alınırsa nereye döneceğini hatırla
   updateContainer(id, patch);
+  logAct("Depoya teslim edildi — " + cntLabel(c) + " · " + whName + " · " + fmtDate(whDate), "wh");
   hideModal("modalWarehouse");
   renderAll();
   toast("Depoya teslim kaydedildi");
@@ -948,6 +1049,7 @@ async function submitDocs() {
   else if (!date) date = todayISO();
   if (!(await confirmSave("modalDocs"))) return;
   updateContainer(id, { docsStatus: status, docsDate: date, docsNote: $("docsNote").value.trim() });
+  { const cc = findC(id); logAct("Evrak durumu: " + (status === "received" ? "Tamam" : status === "partial" ? "Eksik" : "Bekleniyor") + (cc ? " — " + cntLabel(cc) : ""), "docs"); }
   hideModal("modalDocs");
   renderAll();
   toast("Evrak durumu kaydedildi");
@@ -970,6 +1072,7 @@ async function revertStage(id) {
   const patch = { status: prev };
   if (st === "blue") { patch.warehouseDate = ""; patch.warehouseName = ""; patch.statusBeforeWarehouse = ""; }
   updateContainer(id, patch);
+  logAct("Önceki aşamaya alındı: " + STAGE[prev].label + " — " + cntLabel(c), "docs");
   renderAll();
   toast("“" + STAGE[prev].label + "” aşamasına alındı");
 }
@@ -1221,15 +1324,16 @@ function renderArrivals() {
     const withEta = green.filter(c => c.arrivalDate).sort((a, b) => a.arrivalDate.localeCompare(b.arrivalDate));
     const noEta = green.length - withEta.length;
     html += '<span class="arrivals-title">Yaklaşan varışlar</span>';
-    withEta.slice(0, 6).forEach(c => {
+    const showAll = !!ui.arrAll;
+    withEta.slice(0, showAll ? 99 : 6).forEach(c => {
       const d = daysUntil(c.arrivalDate);
-      html += '<span class="arr-chip ' + relClass(d) + '"><b>' + esc(c.supplier) + '</b><span class="mono">' + esc(c.no || "Konteyner " + c.order) + '</span><span class="when">' +
-        esc(fmtShort(c.arrivalDate)) + " " + esc(relDays(d)) + "</span></span>";
+      html += '<button class="arr-chip ' + relClass(d) + '" data-action="showCnt" data-id="' + esc(c.id) + '" title="Detayları göster"><b>' + esc(c.supplier) + '</b><span class="mono">' + esc(c.no || "Konteyner " + c.order) + '</span><span class="when">' +
+        esc(fmtShort(c.arrivalDate)) + " " + esc(relDays(d)) + "</span></button>";
     });
-    if (withEta.length > 6) html += '<span class="arr-chip"><span class="when">+' + (withEta.length - 6) + " konteyner daha</span></span>";
+    if (withEta.length > 6) html += '<button class="arr-chip" data-action="arrAll"><span class="when">' + (showAll ? "Daha az göster" : "+" + (withEta.length - 6) + " konteyner daha") + "</span></button>";
     if (noEta) html += '<span class="arr-chip warn">' + noEta + " konteynerin tahmini varışı girilmedi</span>";
   }
-  if (portNoDocs.length) html += '<span class="arr-chip late"><b>Limanda</b><span class="when">' + portNoDocs.length + " konteynerin evrakı tamam değil</span></span>";
+  if (portNoDocs.length) html += '<button class="arr-chip late" data-action="filterStage" data-stage="red" title="Limandakileri göster"><b>Limanda</b><span class="when">' + portNoDocs.length + " konteynerin evrakı tamam değil</span></button>";
   el.innerHTML = html;
 }
 
@@ -1349,6 +1453,10 @@ document.addEventListener("click", e => {
     case "exportExcel": exportDetailedExcel(); break;
     case "exportPdf": exportPdfReport(); break;
     case "backup": exportBackup(); break;
+    case "openActivity": openActivity(); break;
+    case "showCnt": showCntDetail(id); break;
+    case "goRow": goRow(id); break;
+    case "arrAll": ui.arrAll = !ui.arrAll; renderArrivals(); break;
   }
 });
 
@@ -1673,10 +1781,18 @@ function startCloudSync() {
   });
   listen(proformasCol, docs => { proformas = docs; renderAll(); });
   listen(containersCol, docs => { containers = docs; renderAll(); });
+  listen(activityCol, docs => {
+    docs.sort((a, b) => (b.at || 0) - (a.at || 0));
+    if (docs.length > 260) remoteBatch(b => docs.slice(200).forEach(d => b.delete(activityCol.doc(d.id))));   // eski kayıtları temizle
+    activity = docs.slice(0, 200);
+    renderBell();
+  });
 }
 
 function init() {
   $("brandMark").innerHTML = ic("stack");
+  if (!loadData("app_act_seen", 0)) saveData("app_act_seen", Date.now());
+  renderBell();
   try { const lb = localStorage.getItem("app_last_backup"); if (lb) $("backupBtn").title = "Son yedek: " + JSON.parse(lb); } catch (e) {}
   $("searchBox").insertAdjacentHTML("afterbegin", ic("search"));
   updateCompanyList();
