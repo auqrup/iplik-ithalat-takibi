@@ -230,6 +230,21 @@
     </div>
   </div>
 
+  <!-- Kaydetme onayı -->
+  <div id="modalSave" class="modal" style="z-index:110;">
+    <div class="sheet narrow">
+      <div class="sheet-head"><div><h3>Kaydedilsin mi?</h3></div></div>
+      <div class="sheet-body">
+        <p id="saveText" style="margin-bottom:16px; color:var(--ink-2);"></p>
+        <button class="btn btn-primary btn-block" id="saveYes" onclick="resolveSave('save')">Kaydet</button>
+        <div style="display:flex; gap:8px; margin-top:8px;">
+          <button class="btn btn-ghost" style="flex:1;" onclick="resolveSave('discard')">Kaydetme</button>
+          <button class="btn btn-ghost" style="flex:1;" onclick="resolveSave('cancel')">İptal</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Onay -->
   <div id="modalConfirm" class="modal">
     <div class="sheet narrow">

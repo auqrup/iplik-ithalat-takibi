@@ -88,6 +88,28 @@ body { margin:0; background:var(--page); color:var(--ink); font-family:var(--fon
 .empty { padding:40px 0; text-align:center; color:var(--muted); }
 
 
+/* ---------- Görünüm anahtarı + iplik tablosu ---------- */
+.seg { display:inline-flex; border:1px solid var(--steel); border-radius:7px; overflow:hidden; background:#fff; }
+.seg button { font:inherit; font-weight:600; border:0; background:#fff; color:var(--ink-2); padding:9px 14px; cursor:pointer; }
+.seg button.on { background:var(--ink); color:#fff; }
+.yt-wrap { overflow-x:auto; background:#fff; border:1px solid var(--steel); border-radius:6px; margin-bottom:10px; }
+.yt { width:100%; border-collapse:collapse; font-size:14px; min-width:560px; }
+.yt th { padding:11px 12px; text-align:center; font-size:12px; letter-spacing:.5px; color:#fff; background:var(--ink); white-space:nowrap; }
+.yt th.st { background:var(--c); }
+.yt th.s-yellow { color:var(--ink); }
+.yt td { padding:9px 12px; border-top:1px solid var(--steel); text-align:center; vertical-align:middle; }
+.yt td.k { text-align:left; font-family:var(--mono); font-weight:700; white-space:nowrap; background:#fff; }
+.yt td.v { background:var(--bg); }
+.yt td.tot { font-family:var(--mono); font-weight:800; background:var(--steel-soft); }
+.yt .amt { font:inherit; font-family:var(--mono); font-weight:700; background:none; border:0; border-bottom:2px solid var(--c); padding:0 1px; color:var(--ink); cursor:pointer; }
+.yt .amt:hover { background:#fff; }
+.yt .pl { color:var(--ink-2); padding:0 3px; }
+.yt .sum { display:block; font-size:12px; color:var(--ink-2); font-family:var(--mono); margin-top:2px; }
+.yt .none { color:#b4c0cb; }
+.yt tfoot td { font-family:var(--mono); font-weight:800; background:var(--steel-soft); border-top:3px solid var(--ink); }
+.yt tfoot td.k { font-family:var(--font); }
+.yn { font-size:12px; color:var(--muted); margin:6px 0 16px; line-height:1.6; }
+
 /* ---------- Yaklaşan konteynerler ---------- */
 .near { background:#fff; border:1px solid var(--steel); border-top:5px solid var(--st-green); border-radius:6px; padding:10px 12px 12px; margin-bottom:16px; }
 .near h3 { margin:0 0 8px; font-size:15px; font-weight:800; font-stretch:85%; display:flex; align-items:baseline; gap:8px; }
@@ -201,6 +223,7 @@ const STAGE_ORDER = ["white", "yellow", "green", "red", "blue"];
 let proformas = [], containers = [];
 let current = "";          // seçili firma
 let showArchive = false;
+let viewMode = "board";   // board | yarn
 let loaded = { p: false, c: false };
 
 const $ = id => document.getElementById(id);
@@ -307,6 +330,42 @@ function pfBarHtml(pf, n) {
     '<span class="sp">' + n + " konteyner</span></div>";
 }
 
+const YSTG = [["red", "LİMANDA"], ["green", "YOLDA GELEN"], ["yellow", "SİPARİŞ EDİLEN"]];
+const r3 = n => Math.round(n * 1000) / 1000;
+function yarnData(list) {
+  const norm = s => String(s || "").trim().toUpperCase().replace(/\s+/g, " ");
+  const map = new Map();
+  const sorted = [...list].sort((a, b) => pfOrder(findPf(a.pfId) || {}, findPf(b.pfId) || {}) || byIndex(a, b));
+  sorted.forEach(c => {
+    const st = stageOf(c); if (!YSTG.some(s => s[0] === st)) return;
+    const pf = findPf(c.pfId) || {};
+    const items = st !== "yellow" && c.loadedItems && c.loadedItems.length ? c.loadedItems.map(i => ({ code: i.code, t: (Number(i.kg) || 0) / 1000 })) : (c.orderItems || []).map(i => ({ code: i.code, t: Number(i.ton) || 0 }));
+    items.forEach(i => {
+      const k = norm(i.code); if (!k || i.t <= 0) return;
+      if (!map.has(k)) map.set(k, { code: k, red: [], green: [], yellow: [] });
+      map.get(k)[st].push({ cid: c.id, t: i.t, tip: [pf.no, c.order, c.no].filter(Boolean).join(" · ") });
+    });
+  });
+  const rows = [...map.values()].sort((a, b) => a.code.localeCompare(b.code, "tr", { numeric: true }));
+  const tot = { red: 0, green: 0, yellow: 0, all: 0 };
+  rows.forEach(r => { r.all = 0; YSTG.forEach(([k]) => { r[k + "T"] = r3(r[k].reduce((a, e) => a + e.t, 0)); r.all += r[k + "T"]; tot[k] += r[k + "T"]; }); r.all = r3(r.all); tot.all += r.all; });
+  YSTG.forEach(([k]) => tot[k] = r3(tot[k])); tot.all = r3(tot.all);
+  return { rows, tot };
+}
+function yarnTable(data, from, to, foot) {
+  const cell = (r, k) => {
+    const e = r[k]; if (!e.length) return '<td><span class="none">—</span></td>';
+    return '<td class="v s-' + k + '">' + e.map(x => '<button class="amt" data-cid="' + esc(x.cid) + '" title="' + esc(x.tip) + '">' + fmtTonRaw(r3(x.t)) + " t</button>").join('<span class="pl">+</span>') + (e.length > 1 ? '<span class="sum">= ' + fmtTonRaw(r[k + "T"]) + " t</span>" : "") + "</td>";
+  };
+  return '<table class="yt"><thead><tr><th style="text-align:left">İPLİK / RENK</th>' + YSTG.map(([k, l]) => '<th class="st s-' + k + '">' + l + "</th>").join("") + "<th>TOPLAM</th></tr></thead><tbody>" +
+    data.rows.slice(from, to).map(r => '<tr><td class="k">' + esc(r.code) + "</td>" + YSTG.map(([k]) => cell(r, k)).join("") + '<td class="tot">' + fmtTonRaw(r.all) + " t</td></tr>").join("") + "</tbody>" +
+    (foot ? '<tfoot><tr><td class="k">TOPLAM</td>' + YSTG.map(([k]) => "<td>" + (data.tot[k] ? fmtTonRaw(data.tot[k]) + " t" : "—") + "</td>").join("") + "<td>" + fmtTonRaw(data.tot.all) + " t</td></tr></tfoot>" : "") + "</table>";
+}
+function yarnHtml(list) {
+  const d = yarnData(list);
+  if (!d.rows.length) return '<div class="empty">Limanda, yolda veya siparişte iplik kalemi yok.</div>';
+  return '<div class="yt-wrap">' + yarnTable(d, 0, d.rows.length, true) + '</div><div class="yn">Depoya teslim edilenler ve iplik kalemi girilmemiş konteynerler hesaba katılmaz. Aynı iplik farklı yazılmışsa ayrı satır olur. Bir miktara tıklayınca o konteynerin detayı sağda açılır.</div>';
+}
 function soonHtml(list) {
   const way = list.filter(c => stageOf(c) === "green").sort((a, b) => String(a.arrivalDate || "9999").localeCompare(String(b.arrivalDate || "9999")));
   const items = way.map(c => {
@@ -343,9 +402,11 @@ function render() {
 
   let html = '<div class="head"><h2>' + esc(current) + '</h2><span class="meta">' + pfs.length + " proforma · " + list.length + " konteyner" + (kg ? " · " + fmtTon(kg) : "") + "</span>" +
     '<div class="sp"><label class="chk"><input type="checkbox" id="chkArc"' + (showArchive ? " checked" : "") + "> Arşivdekileri de göster</label>" +
+    '<div class="seg"><button data-view="board"' + (viewMode === "board" ? ' class="on"' : "") + '>Pano</button><button data-view="yarn"' + (viewMode === "yarn" ? ' class="on"' : "") + '>İplik tablosu</button></div>' +
     '<button class="btn" id="pdfBtn">' + esc(current) + " — PDF raporu</button></div></div>";
   html += soonHtml(list);
   if (!pfs.length) html += '<div class="empty">Bu firmada gösterilecek proforma yok.</div>';
+  if (viewMode === "yarn") { html += yarnHtml(list); $("view").innerHTML = html; return; }
   html += '<div class="legend">' + STAGE_ORDER.map(k => '<span class="s-' + k + '"><i></i>' + STAGE[k].label + "</span>").join("") + '<span class="hint">Kutunun üzerine gelin veya tıklayın: detaylar sağda açılır</span></div>';
   html += '<div class="board">' + pfs.map(pf => {
     const l = list.filter(c => c.pfId === pf.id).sort(byIndex);
@@ -367,13 +428,15 @@ function showPanel(id, pin) {
 }
 function hidePanel() { pinned = ""; $("panel").classList.remove("open"); document.querySelectorAll(".sq.sel").forEach(e => e.classList.remove("sel")); }
 const canHover = window.matchMedia && matchMedia("(hover:hover)").matches;
-document.addEventListener("mouseover", e => { const q = e.target.closest(".sq,.soon-i"); if (q && canHover && !pinned) showPanel(q.dataset.cid, false); });
-document.addEventListener("mouseout", e => { const q = e.target.closest(".sq,.soon-i"); if (q && canHover && !pinned && !(e.relatedTarget && e.relatedTarget.closest && e.relatedTarget.closest(".sq,.soon-i"))) $("panel").classList.remove("open"), q.classList.remove("sel"); });
+document.addEventListener("mouseover", e => { const q = e.target.closest(".sq,.soon-i,.amt"); if (q && canHover && !pinned) showPanel(q.dataset.cid, false); });
+document.addEventListener("mouseout", e => { const q = e.target.closest(".sq,.soon-i,.amt"); if (q && canHover && !pinned && !(e.relatedTarget && e.relatedTarget.closest && e.relatedTarget.closest(".sq,.soon-i,.amt"))) $("panel").classList.remove("open"), q.classList.remove("sel"); });
 document.addEventListener("keydown", e => { if (e.key === "Escape") hidePanel(); });
 
 document.addEventListener("click", e => {
+  const vb = e.target.closest("[data-view]");
+  if (vb) { hidePanel(); viewMode = vb.dataset.view; render(); return; }
   if (e.target.closest("[data-close]")) { hidePanel(); return; }
-  const sq = e.target.closest(".sq,.soon-i");
+  const sq = e.target.closest(".sq,.soon-i,.amt");
   if (sq) { if (pinned === sq.dataset.cid) hidePanel(); else { pinned = sq.dataset.cid; showPanel(pinned, true); } return; }
   if (pinned && !e.target.closest("#panel")) hidePanel();
   const chip = e.target.closest(".chip");
@@ -417,7 +480,7 @@ function exportPdf() {
   };
   const thead = "<thead><tr><th>No</th><th>Durum</th><th>Konteyner</th><th>İplik</th><th style=\"text-align:right\">Miktar</th><th>Varış / Durum</th><th>Evrak</th></tr></thead>";
 
-  const units = [];
+  let units = [];
   units.push('<div class="rp-top"><div><div class="rp-title">' + esc(comp) + '</div><div class="rp-sub">Sevkiyat durumu</div></div><div class="rp-date">' + esc(fmtDate(todayISO())) + "<small>saat " + hhmm + "</small></div></div>" +
     '<div class="rp-sumline">' + pfs.length + " proforma · " + list.length + " konteyner" + (kg ? " · " + fmtTon(kg) : "") + "</div>");
   pfs.forEach(pf => {
@@ -427,6 +490,12 @@ function exportPdf() {
     }
   });
 
+  if (viewMode === "yarn") {
+    const yd = yarnData(list);
+    if (!yd.rows.length) { alert("Limanda, yolda veya siparişte iplik kalemi yok."); return; }
+    units = ['<div class="rp-top"><div><div class="rp-title">' + esc(comp) + '</div><div class="rp-sub">İplik durumu: limanda, yolda, siparişte (ton)</div></div><div class="rp-date">' + esc(fmtDate(todayISO())) + "<small>saat " + hhmm + "</small></div></div>"];
+    for (let r = 0; r < yd.rows.length; r += 16) units.push(yarnTable(yd, r, r + 16, r + 16 >= yd.rows.length));
+  }
   const area = $("pdfArea"), btn = $("pdfBtn");
   if (btn) { btn.disabled = true; btn.textContent = "Hazırlanıyor…"; }
   area.innerHTML = units.map(u => '<div class="rp-unit">' + u + "</div>").join("");
@@ -450,7 +519,7 @@ function exportPdf() {
       pdf.text(ascii(comp) + "  |  " + fmtDate(todayISO()) + " " + hhmm, M, PH - 6);
       pdf.text("Sayfa " + p + " / " + n, PW - M, PH - 6, { align: "right" });
     }
-    pdf.save(ascii(comp).replace(/[^A-Za-z0-9_-]+/g, "_") + "_Sevkiyat_Raporu_" + todayISO() + ".pdf");
+    pdf.save(ascii(comp).replace(/[^A-Za-z0-9_-]+/g, "_") + (viewMode === "yarn" ? "_Iplik_Durumu_" : "_Sevkiyat_Raporu_") + todayISO() + ".pdf");
     done();
   }).catch(err => { alert("PDF oluşturulamadı: " + err); done(); });
 }

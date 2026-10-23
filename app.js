@@ -311,6 +311,30 @@ function resolveConfirm(v) {
   if (confirmResolve) { const r = confirmResolve; confirmResolve = null; r(v); }
 }
 
+// ---- Kaydetme onayı: Kaydet / Kaydetme / İptal ----
+let saveResolve = null;
+const SAVE_LABELS = { modalProforma: "Proforma bilgileri", modalOrder: "Sipariş bilgileri", modalStatus: "Yükleme bilgileri", modalArrival: "Varış bilgisi", modalWarehouse: "Depo teslim bilgisi", modalDocs: "Evrak durumu" };
+function askSave(label) {
+  return new Promise(resolve => {
+    if (saveResolve) { resolve("cancel"); return; }   // zaten soruluyor
+    saveResolve = resolve;
+    $("saveText").textContent = label + " kaydedilecek. “Kaydetme” derseniz yaptığınız değişiklikler atılır ve pencere kapanır.";
+    showModal("modalSave");
+    setTimeout(() => { const b = $("saveYes"); if (b) b.focus(); }, 30);
+  });
+}
+function resolveSave(v) {
+  hideModal("modalSave");
+  if (saveResolve) { const r = saveResolve; saveResolve = null; r(v); }
+}
+// Doğrulama geçtikten sonra, kayıttan hemen önce çağrılır. true = kaydet.
+async function confirmSave(modalId) {
+  const r = await askSave(SAVE_LABELS[modalId] || "Değişiklikler");
+  if (r === "save") return true;
+  if (r === "discard") { hideModal(modalId); toast("Değişiklikler kaydedilmedi"); }
+  return false;   // iptal: pencere açık kalır
+}
+
 let pendingDeletionAction = null;
 function requestPinProtectedAction(cb) {
   pendingDeletionAction = cb;
@@ -478,6 +502,7 @@ async function saveProforma() {
       const ok = await askConfirm({ title: removed.length + " boş konteyner silinsin mi?", text: "Sipariş detayı girilmemiş son konteynerler kaldırılacak.", okText: "Evet, sil", danger: true });
       if (!ok) return;
     }
+    if (!(await confirmSave("modalProforma"))) return;
     err.style.display = "none";
     const relabel = p.no !== no || (p.date || "") !== (date || "");
     const patch = { no, date, incoterm, pricePerKg, planTon, note };
@@ -512,6 +537,7 @@ async function saveProforma() {
     return;
   }
 
+  if (!(await confirmSave("modalProforma"))) return;
   const stamp = Date.now();
   const pf = { id: "pf_" + stamp, supplier, no, date, incoterm, total, pricePerKg, planTon, note, isArchived: false, timestamp: stamp };
   const list = [];
@@ -764,6 +790,7 @@ async function submitOrder() {
     if (!ok) return;
   }
 
+  if (!(await confirmSave("modalOrder"))) return;
   const c = findC(id);
   if (!c) return;
   const patch = { orderItems: items, weightTon: Math.round(totalTon * 1000) / 1000, orderDate };
@@ -839,6 +866,7 @@ async function submitStatus() {
     if (!ok) return;
   }
 
+  if (!(await confirmSave("modalStatus"))) return;
   const c = findC(id);
   if (!c) return;
   const patch = { no, loadingDate, shippingLine, blNo, weightKg, totalCost: n.calc ? String(n.calc) : "", unitPrice: n.unit, extraCost, calcNote, arrivalDate, loadedItems };
@@ -860,11 +888,12 @@ function openArrivalModal(id) {
   showModal("modalArrival");
 }
 
-function submitArrival() {
+async function submitArrival() {
   const id = $("arrivalCntId").value;
   const c = findC(id);
   if (!c) return;
   const atPort = $("arrivalAtPort").checked;
+  if (!(await confirmSave("modalArrival"))) return;
   updateContainer(id, { arrivalDate: $("arrivalDateInput").value, status: atPort ? "red" : "green" });
   hideModal("modalArrival");
   renderAll();
@@ -884,11 +913,12 @@ function openWarehouseModal(id) {
   showModal("modalWarehouse");
 }
 
-function submitWarehouse() {
+async function submitWarehouse() {
   const id = $("warehouseCntId").value;
   const whDate = $("whDateInput").value;
   const whName = $("whNameSelect").value;
   if (!whDate) { toast("Teslim tarihini seçin.", "err"); return; }
+  if (!(await confirmSave("modalWarehouse"))) return;
   const c = findC(id);
   if (!c) return;
   const patch = { status: "blue", warehouseDate: whDate, warehouseName: whName };
@@ -910,12 +940,13 @@ function openDocsModal(id) {
   $("docsNote").value = c.docsNote || "";
   showModal("modalDocs");
 }
-function submitDocs() {
+async function submitDocs() {
   const id = $("docsCntId").value;
   const status = $("docsStatus").value;
   let date = $("docsDate").value;
   if (status === "pending") date = "";
   else if (!date) date = todayISO();
+  if (!(await confirmSave("modalDocs"))) return;
   updateContainer(id, { docsStatus: status, docsDate: date, docsNote: $("docsNote").value.trim() });
   hideModal("modalDocs");
   renderAll();
@@ -1316,14 +1347,15 @@ document.addEventListener("click", e => {
     case "clearFilters": ui.stage = "all"; ui.q = ""; $("searchInput").value = ""; renderAll(); break;
     case "toggleDelivered": if (ui.expanded.has(id)) ui.expanded.delete(id); else ui.expanded.add(id); renderAll(); break;
     case "exportExcel": exportDetailedExcel(); break;
-    case "exportImage": captureActiveCardsAsImage(); break;
+    case "exportPdf": exportPdfReport(); break;
     case "backup": exportBackup(); break;
   }
 });
 
 document.addEventListener("keydown", e => {
   if (e.key === "Escape") {
-    if ($("modalConfirm").classList.contains("open")) resolveConfirm(false);
+    if ($("modalSave").classList.contains("open")) resolveSave("cancel");
+    else if ($("modalConfirm").classList.contains("open")) resolveConfirm(false);
     else closeAllModals();
   }
   if (e.key === "Enter" && e.target) {
@@ -1360,10 +1392,10 @@ function exportBackup() {
 // =====================================================
 // 12. RESİM RAPORU
 // =====================================================
-function captureActiveCardsAsImage() {
+function exportPdfReport() {
   const act = activeContainers();
   if (!act.length) { toast("Aktif konteyner yok.", "err"); return; }
-  if (typeof html2canvas === "undefined") { toast("Resim kütüphanesi yüklenemedi. İnternet bağlantısını kontrol edin.", "err"); return; }
+  if (typeof html2canvas === "undefined" || !window.jspdf) { toast("PDF kütüphanesi yüklenemedi. İnternet bağlantısını kontrol edin.", "err"); return; }
 
   const sumKg = list => list.reduce((a, c) => a + bestKg(c), 0);
   const now = new Date();
@@ -1406,38 +1438,57 @@ function captureActiveCardsAsImage() {
       "<div>" + when + "</div>" + doc + "</div></div>";
   };
 
-  let html = '<div class="rp-top"><div><div class="rp-title">Sevkiyat Durum Raporu</div><div class="rp-sub">Aktif proformalar ve konteynerlerin güncel durumu</div></div>' +
-    '<div class="rp-date">' + esc(fmtDate(todayISO())) + "<small>saat " + hhmm + "</small></div></div>";
-  html += '<div class="rp-tiles">' + STAGE_ORDER.map(tile).join("") + "</div>";
+  const units = [];
+  units.push('<div class="rp-top"><div><div class="rp-title">Sevkiyat Durum Raporu</div><div class="rp-sub">Aktif proformalar ve konteynerlerin güncel durumu</div></div>' +
+    '<div class="rp-date">' + esc(fmtDate(todayISO())) + "<small>saat " + hhmm + "</small></div></div>" +
+    '<div class="rp-tiles">' + STAGE_ORDER.map(tile).join("") + "</div>");
 
   companies.forEach(comp => {
     const pfs = proformas.filter(p => p.supplier === comp && !p.isArchived && act.some(c => c.pfId === p.id)).sort(pfOrder);
     if (!pfs.length) return;
     const all = act.filter(c => pfs.some(p => p.id === c.pfId));
-    html += '<div class="rp-co"><b>' + esc(comp) + "</b><span>" + pfs.length + " proforma · " + all.length + " konteyner · " + fmtTon(sumKg(all)) + "</span></div>";
-    pfs.forEach(pf => {
+    const head = '<div class="rp-co"><b>' + esc(comp) + "</b><span>" + pfs.length + " proforma · " + all.length + " konteyner · " + fmtTon(sumKg(all)) + "</span></div>";
+    pfs.forEach((pf, k) => {
       const list = act.filter(c => c.pfId === pf.id).sort(byIndex);
-      html += '<div class="rp-pfbar"><b>' + esc(pf.no) + "</b>" + (pf.incoterm ? "<span>" + esc(pf.incoterm) + "</span>" : "") +
+      const bar = '<div class="rp-pfbar"><b>' + esc(pf.no) + "</b>" + (pf.incoterm ? "<span>" + esc(pf.incoterm) + "</span>" : "") +
         (pf.date ? "<span>" + esc(fmtDate(pf.date)) + "</span>" : "") +
         (pf.pricePerKg ? "<span>" + fmtPriceVal(pf.pricePerKg) + " $/kg</span>" : "") +
-        '<span class="sp">' + list.length + " konteyner</span></div>" +
-        '<div class="rp-cards">' + list.map(card).join("") + "</div>";
+        '<span class="sp">' + list.length + " konteyner</span></div>";
+      for (let r = 0; r < list.length; r += 5) {
+        units.push((r === 0 ? (k === 0 ? head : "") + bar : "") + '<div class="rp-cards">' + list.slice(r, r + 5).map(card).join("") + "</div>");
+      }
     });
   });
-  html += '<div class="rp-foot"><span>İplik Takip Masası</span><span>' + act.length + " konteyner · " + fmtTon(sumKg(act)) + "</span></div>";
 
   const area = $("printCanvasArea");
-  area.innerHTML = html;
-  html2canvas(area, { scale: 2, useCORS: true, backgroundColor: "#ffffff" }).then(canvas => {
-    const link = document.createElement("a");
-    link.download = "Sevkiyat_Durum_Raporu_" + todayISO() + ".png";
-    link.href = canvas.toDataURL("image/png");
-    link.click();
+  area.innerHTML = units.map(u => '<div class="rp-unit">' + u + "</div>").join("");
+  const els = [...area.querySelectorAll(".rp-unit")];
+  toast("PDF hazırlanıyor...");
+  Promise.all(els.map(el => html2canvas(el, { scale: 2, useCORS: true, backgroundColor: "#ffffff" }))).then(canvases => {
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+    const PW = 297, PH = 210, M = 9, FOOT = 8, GAP = 3;
+    const W = PW - 2 * M, maxY = PH - M - FOOT;
+    let y = M, page = 1;
+    canvases.forEach(cv => {
+      const h = cv.height * W / cv.width;
+      if (y + h > maxY && y > M) { pdf.addPage(); page++; y = M; }
+      pdf.addImage(cv.toDataURL("image/jpeg", 0.92), "JPEG", M, y, W, Math.min(h, maxY - M));
+      y += h + GAP;
+    });
+    const n = pdf.getNumberOfPages();
+    pdf.setFontSize(8); pdf.setTextColor(110, 122, 135);
+    for (let p = 1; p <= n; p++) {
+      pdf.setPage(p);
+      pdf.text("Iplik Takip Masasi  |  " + fmtDate(todayISO()) + " " + hhmm, M, PH - 6);
+      pdf.text("Sayfa " + p + " / " + n, PW - M, PH - 6, { align: "right" });
+    }
+    pdf.save("Sevkiyat_Durum_Raporu_" + todayISO() + ".pdf");
     area.innerHTML = "";
-    toast("Resim indirildi");
+    toast("PDF indirildi");
   }).catch(err => {
     area.innerHTML = "";
-    toast("Resim oluşturulamadı: " + err, "err");
+    toast("PDF oluşturulamadı: " + err, "err");
   });
 }
 
