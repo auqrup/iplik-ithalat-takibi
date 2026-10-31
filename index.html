@@ -34,7 +34,7 @@
 
       <div class="top-actions">
         <button class="btn btn-ghost" id="bellBtn" data-action="openActivity" title="Son değişiklikler">Bildirimler<span class="bell-n" id="bellN" hidden></span></button>
-        <a class="btn btn-ghost" href="viewer.html" title="Sadece görüntüleme: özet pano">Genel bakış</a>
+        <a class="btn btn-accent" href="viewer.html" title="Sadece görüntüleme: özet pano">Genel bakış</a>
         <button class="btn btn-ghost" id="backupBtn" data-action="backup">Yedek al</button>
         <div class="menu-wrap">
           <button class="btn btn-ghost" data-action="menu">Rapor al</button>
@@ -43,6 +43,7 @@
             <button data-action="exportPdf">PDF olarak</button>
           </div>
         </div>
+        <button class="btn btn-ghost" data-action="openColors">Renkler</button>
         <button class="btn btn-ghost" data-action="openCompanies">Firmalar</button>
       </div>
     </div>
@@ -129,9 +130,13 @@
         <input type="hidden" id="orderCntId">
         <div class="f"><label for="orderDateInput">Sipariş tarihi</label><input type="date" id="orderDateInput"></div>
         <p id="orderTarget" class="cap-line"></p>
-        <span class="flabel">Bu konteynerdeki iplik / renk kodu ve miktar (ton)</span>
+        <span class="flabel">Bu firmanın renkleri <small>(dokunarak ekleyin)</small></span>
+        <input type="search" id="orderChipSearch" placeholder="Renk ara…" hidden style="margin-top:6px;">
+        <div id="orderChips" class="chips-pick"></div>
+        <p id="orderChipNote" class="sheet-sub"></p>
+        <span class="flabel">Seçilenler: iplik / renk kodu ve miktar (ton)</span>
         <div id="orderItemsContainer" style="margin-top:6px;"></div>
-        <button class="btn btn-ghost btn-sm" type="button" onclick="addOrderRow('', '')">+ Satır ekle</button>
+        <button class="btn btn-ghost btn-sm" type="button" onclick="addOrderRow('', '')" title="Listede olmayan bir rengi elle yazmak için">+ Elle yaz</button>
         <div id="orderTotalInfo" class="total-line"></div>
         <button class="btn btn-primary btn-block" onclick="submitOrder()">Siparişi kaydet</button>
       </div>
@@ -250,6 +255,31 @@
         <button class="icon-btn" onclick="hideModal('modalDetail')" aria-label="Kapat">✕</button>
       </div>
       <div class="sheet-body" id="detailBody"></div>
+    </div>
+  </div>
+
+  <!-- Renkler -->
+  <div id="modalColors" class="modal">
+    <div class="sheet">
+      <div class="sheet-head">
+        <div><h3>Renkler</h3><p class="sheet-sub">Her firmadan sipariş ettiğiniz renk / kod listesi</p></div>
+        <button class="icon-btn" onclick="hideModal('modalColors')" aria-label="Kapat">✕</button>
+      </div>
+      <div class="sheet-body">
+        <div class="f"><label for="colSupplier">Firma</label><select id="colSupplier"></select></div>
+        <div id="colList"></div>
+        <span class="flabel" style="margin-top:12px;">Yeni renk ekle</span>
+        <div class="yarn-row" style="margin-top:6px;">
+          <input type="text" id="colCode" placeholder="Kod (HE-559)" autocomplete="off">
+          <input type="text" id="colName" placeholder="Renk (LACİVERT)" autocomplete="off">
+          <button class="btn btn-primary btn-sm" type="button" onclick="addColor()">Ekle</button>
+        </div>
+        <details class="bulk">
+          <summary>Toplu ekle (Excel’den yapıştır)</summary>
+          <textarea id="colBulk" placeholder="Her satıra bir renk:&#10;HE-559  LACİVERT&#10;HE-307  BORDO"></textarea>
+          <button class="btn btn-ghost btn-sm" type="button" onclick="addColorsBulk()">Listeye ekle</button>
+        </details>
+      </div>
     </div>
   </div>
 

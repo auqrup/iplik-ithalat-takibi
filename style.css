@@ -399,3 +399,21 @@ button.arr-chip:hover { background: var(--steel-soft); }
 .dt-h { font-weight: 800; font-size: 12px; letter-spacing: .4px; text-transform: uppercase; margin: 14px 0 6px; color: var(--ink-2); }
 .dt-items { width: 100%; border-collapse: collapse; font-size: 13px; }
 .dt-items td { padding: 6px 4px; border-bottom: 1px solid #d5dde4; } .dt-items td:nth-child(2), .dt-items td:nth-child(3) { text-align: right; font-family: var(--mono); white-space: nowrap; }
+
+/* ---------- Genel bakış düğmesi ---------- */
+.btn-accent { background: #2f6fd6; border-color: #2f6fd6; color: #fff; font-weight: 700; }
+.btn-accent:hover { background: #3b7be6; border-color: #3b7be6; }
+
+/* ---------- Renk seçimi (firma bazlı) ---------- */
+.chips-pick { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 8px; max-height: 220px; overflow: auto; }
+.pick { font: inherit; cursor: pointer; background: #fff; border: 1px solid var(--steel); border-radius: 8px; padding: 6px 11px; display: flex; flex-direction: column; align-items: flex-start; line-height: 1.2; text-align: left; color: var(--ink); }
+.pick b { font-family: var(--mono); font-size: 13px; }
+.pick span { font-size: 11.5px; color: var(--ink-2); }
+.pick:hover { border-color: var(--ink); }
+.pick.on { background: var(--st-blue-bg); border-color: var(--st-blue); }
+.pick.on b::after { content: " ✓"; color: var(--st-blue); }
+.pick.add { border-style: dashed; color: var(--ink-2); justify-content: center; font-weight: 600; }
+.yarn-row input.locked { background: #f1f5f8; font-weight: 600; }
+details.bulk { margin-top: 12px; } details.bulk summary { cursor: pointer; font-weight: 600; color: var(--ink-2); font-size: 13px; }
+details.bulk textarea { width: 100%; min-height: 110px; margin: 8px 0; padding: 8px 10px; border: 1px solid var(--steel); border-radius: var(--r-s); font-family: var(--mono); font-size: 13px; }
+.mono { font-family: var(--mono); }

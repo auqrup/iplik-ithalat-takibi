@@ -145,7 +145,7 @@ const firebaseConfig = {
 };
 
 let db = null;
-let companiesCol, proformasCol, containersCol, activityCol;
+let companiesCol, proformasCol, containersCol, activityCol, colorsCol;
 
 try {
   firebase.initializeApp(firebaseConfig);
@@ -155,6 +155,7 @@ try {
   proformasCol = db.collection("yarn_proformas");
   containersCol = db.collection("yarn_containers");
   activityCol = db.collection("yarn_activity");
+  colorsCol = db.collection("yarn_colors");
 } catch (err) {
   db = null;
   console.warn("Firebase kullanılamıyor, yerel mod:", err);
@@ -199,6 +200,7 @@ let companies = [];
 let proformas = loadData("app_proformas_v1", []);
 let containers = loadData("app_containers_v1", []);
 let activity = loadData("app_activity_v1", []);
+let colors = loadData("app_colors_v1", []);   // firma bazlı renk / kod listesi
 const DEVICE = (() => { let d = loadData("app_device_id", ""); if (!d) { d = "d" + Math.random().toString(36).slice(2, 8); saveData("app_device_id", d); } return d; })();
 
 function setCompanies(docs) {
@@ -212,6 +214,7 @@ function cacheAll() {
   saveData("app_proformas_v1", proformas);
   saveData("app_containers_v1", containers);
   saveData("app_activity_v1", activity);
+  saveData("app_colors_v1", colors);
 }
 
 // Ekran durumu (filtreler, açık/kapalı bölümler)
@@ -756,9 +759,108 @@ function buildYarnRow(codeClass, valClass, placeholder, step, code, val, onChang
   return div;
 }
 
-function addOrderRow(code, ton) {
-  $("orderItemsContainer").appendChild(buildYarnRow("order-code-input", "order-ton-input", "Ton", "0.01", code, ton, updateOrderTotal));
+function addOrderRow(code, ton, locked) {
+  const row = buildYarnRow("order-code-input", "order-ton-input", "Ton", "0.01", code, ton, () => { updateOrderTotal(); renderOrderChips(); });
+  const ci = row.querySelector(".order-code-input");
+  if (locked) { ci.readOnly = true; ci.classList.add("locked"); }
+  $("orderItemsContainer").appendChild(row);
   updateOrderTotal();
+  renderOrderChips();
+  return row;
+}
+
+// ---- Renk listesi (firma bazlı) ----
+const colorLabel = col => (col.code + " " + (col.name || "")).trim();
+function colorsOf(supplier) {
+  return colors.filter(c => c.supplier === supplier).sort((a, b) => String(a.code).localeCompare(String(b.code), "tr", { numeric: true }));
+}
+function orderSupplier() { const c = findC($("orderCntId").value); return c ? c.supplier : ""; }
+function renderOrderChips() {
+  const box = $("orderChips"); if (!box) return;
+  const list = colorsOf(orderSupplier());
+  const q = ($("orderChipSearch").value || "").trim().toLocaleLowerCase("tr-TR");
+  const used = new Set([...document.querySelectorAll("#orderItemsContainer .order-code-input")].map(i => i.value.trim().toUpperCase()));
+  $("orderChipSearch").hidden = list.length <= 12;
+  const shown = q ? list.filter(c => colorLabel(c).toLocaleLowerCase("tr-TR").includes(q)) : list;
+  box.innerHTML = shown.map(c => '<button type="button" class="pick' + (used.has(colorLabel(c).toUpperCase()) ? " on" : "") + '" data-action="pickColor" data-id="' + esc(c.id) + '"><b>' + esc(c.code) + "</b>" + (c.name ? "<span>" + esc(c.name) + "</span>" : "") + "</button>").join("") +
+    '<button type="button" class="pick add" data-action="newColorFor">+ ' + (list.length ? "Yeni renk" : "Renk listesi oluştur") + "</button>";
+  $("orderChipNote").textContent = list.length ? "" : "Bu firma için henüz renk listesi yok. “Renk listesi oluştur” ile bir kez ekleyin, sonra sadece dokunursunuz.";
+}
+function pickColor(id) {
+  const col = colors.find(c => c.id === id); if (!col) return;
+  const label = colorLabel(col).toUpperCase();
+  let found = null;
+  document.querySelectorAll("#orderItemsContainer .yarn-row").forEach(r => { if (r.querySelector(".order-code-input").value.trim().toUpperCase() === label) found = r; });
+  if (found) { const t = found.querySelector(".order-ton-input"); t.focus(); t.select(); return; }
+  // boş bırakılmış (kodsuz) satır varsa önce onu temizle
+  document.querySelectorAll("#orderItemsContainer .yarn-row").forEach(r => { if (!r.querySelector(".order-code-input").value.trim() && !(parseFloat(r.querySelector(".order-ton-input").value) > 0)) r.remove(); });
+  let sum = 0; document.querySelectorAll("#orderItemsContainer .order-ton-input").forEach(i => { sum += parseFloat(i.value) || 0; });
+  const c = findC($("orderCntId").value), pf = c && findPf(c.pfId);
+  const rem = Math.round(((pf && pf.planTon || DEFAULT_PLAN_TON) - sum) * 100) / 100;
+  const row = addOrderRow(colorLabel(col), rem > 0 ? rem : "", true);
+  const t = row.querySelector(".order-ton-input"); t.focus(); t.select();
+}
+
+// ---- Renkler penceresi ----
+function openColors(supplier) {
+  const sel = $("colSupplier");
+  sel.innerHTML = companies.map(c => '<option value="' + esc(c) + '">' + esc(c) + "</option>").join("");
+  sel.value = supplier && companies.includes(supplier) ? supplier : (ui.company !== "all" && companies.includes(ui.company) ? ui.company : companies[0] || "");
+  renderColors();
+  showModal("modalColors");
+}
+function renderColors() {
+  const sup = $("colSupplier").value;
+  const list = colorsOf(sup);
+  $("colList").innerHTML = list.map(c => '<div class="list-row"><span><b class="mono">' + esc(c.code) + "</b> " + esc(c.name || "") + '</span><button class="btn btn-ghost btn-sm" data-action="delColor" data-id="' + esc(c.id) + '">Sil</button></div>').join("") ||
+    '<p class="sheet-sub">' + (sup ? esc(sup) + " için henüz renk yok." : "Önce bir firma ekleyin.") + "</p>";
+  if ($("modalOrder").classList.contains("open")) renderOrderChips();
+}
+function addColorRecord(supplier, code, name) {
+  code = String(code || "").trim().toLocaleUpperCase("tr-TR"); name = String(name || "").trim().toLocaleUpperCase("tr-TR");
+  if (!supplier || !code) return null;
+  if (colors.some(c => c.supplier === supplier && String(c.code).toUpperCase() === code)) return false;
+  const rec = { id: "col_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6), supplier, code, name, at: Date.now() };
+  colors.push(rec);
+  remoteSet(colorsCol, rec.id, rec);
+  return rec;
+}
+function addColor() {
+  const sup = $("colSupplier").value, code = $("colCode").value, name = $("colName").value;
+  if (!sup) { toast("Önce firma seçin.", "err"); return; }
+  if (!code.trim()) { toast("Kodu yazın.", "err"); return; }
+  const r = addColorRecord(sup, code, name);
+  if (r === false) { toast("Bu kod bu firmada zaten var.", "err"); return; }
+  cacheAll();
+  logAct("Renk eklendi — " + sup + ": " + colorLabel(r), "pf");
+  $("colCode").value = ""; $("colName").value = ""; $("colCode").focus();
+  renderColors();
+}
+function addColorsBulk() {
+  const sup = $("colSupplier").value;
+  if (!sup) { toast("Önce firma seçin.", "err"); return; }
+  let added = 0, dup = 0;
+  $("colBulk").value.split(/\r?\n/).forEach(line => {
+    const l = line.trim(); if (!l) return;
+    let parts = l.split(/\t|;|,|\s+[-–—]\s+/).map(x => x.trim()).filter(Boolean);
+    if (parts.length < 2) { const m = l.match(/^(\S+)\s+(.+)$/); parts = m ? [m[1], m[2]] : [l]; }
+    const r = addColorRecord(sup, parts[0], parts.slice(1).join(" "));
+    if (r === false) dup++; else if (r) added++;
+  });
+  if (added) { cacheAll(); logAct("Renk listesine " + added + " renk eklendi — " + sup, "pf"); }
+  $("colBulk").value = "";
+  renderColors();
+  toast(added + " renk eklendi" + (dup ? ", " + dup + " tanesi zaten vardı" : ""), added ? "" : "err");
+}
+async function removeColor(id) {
+  const col = colors.find(c => c.id === id); if (!col) return;
+  const ok = await askConfirm({ title: colorLabel(col) + " silinsin mi?", text: "Sadece renk listesinden kalkar; daha önce girdiğiniz siparişler etkilenmez.", okText: "Evet, sil", danger: true });
+  if (!ok) return;
+  colors = colors.filter(c => c.id !== id);
+  remoteDelete(colorsCol, id);
+  cacheAll();
+  logAct("Renk silindi — " + col.supplier + ": " + colorLabel(col), "del");
+  renderColors();
 }
 function addLoadedRow(code, kg, cartons) {
   $("loadedItemsContainer").appendChild(buildYarnRow("loaded-code-input", "loaded-kg-input", "Kg", "1", code, kg,
@@ -842,6 +944,7 @@ function updateCalc() {
 }
 function refreshStatusCalc() { updateWeightCheck(); updateCalc(); }
 
+document.addEventListener("change", e => { if (e.target.id === "colSupplier") renderColors(); });
 document.addEventListener("input", e => {
   const t = e.target;
   if (t.id === "statusWeightKg") { t.dataset.manual = t.value ? "1" : ""; refreshStatusCalc(); }
@@ -850,6 +953,7 @@ document.addEventListener("input", e => {
   else if (t.matches && t.matches(".loaded-kg-input")) { syncAutoWeight(); refreshStatusCalc(); }
   else if (t.matches && t.matches(".loaded-ctn-input")) updateCalc();
   else if (t.matches && t.matches(".order-ton-input")) updateOrderTotal();
+  else if (t.id === "orderChipSearch") renderOrderChips();
   else if (t.id === "pfIncoterm") updateIncotermHelp();
 });
 document.addEventListener("change", e => {
@@ -864,8 +968,12 @@ function openOrderModal(id) {
   $("orderSub").textContent = cntLabel(c);
   $("orderDateInput").value = c.orderDate || todayISO();
   $("orderItemsContainer").innerHTML = "";
-  if (c.orderItems && c.orderItems.length) c.orderItems.forEach(it => addOrderRow(it.code, it.ton));
-  else { const pf0 = findPf(c.pfId); addOrderRow("", (pf0 && pf0.planTon) || DEFAULT_PLAN_TON); }
+  $("orderChipSearch").value = "";
+  const known = new Set(colorsOf(c.supplier).map(x => colorLabel(x).toUpperCase()));
+  if (c.orderItems && c.orderItems.length) c.orderItems.forEach(it => addOrderRow(it.code, it.ton, known.has(String(it.code).toUpperCase())));
+  else if (!known.size) { const pf0 = findPf(c.pfId); addOrderRow("", (pf0 && pf0.planTon) || DEFAULT_PLAN_TON); }
+  renderOrderChips();
+  updateOrderTotal();
   showModal("modalOrder");
 }
 
@@ -877,9 +985,9 @@ async function submitOrder() {
   document.querySelectorAll("#orderItemsContainer .yarn-row").forEach(row => {
     const code = row.querySelector(".order-code-input").value.trim().toUpperCase();
     const ton = parseFloat(row.querySelector(".order-ton-input").value) || 0;
-    if (code) { items.push({ code, ton }); totalTon += ton; }
+    if (code && ton > 0) { items.push({ code, ton }); totalTon += ton; }   // miktarı girilmeyen satır sayılmaz
   });
-  if (!items.length) { toast("En az bir iplik / renk kodu girin.", "err"); return; }
+  if (!items.length) { toast("En az bir iplik / renk ve miktar (ton) girin.", "err"); return; }
   const cs = capState(totalTon * 1000);
   if (cs && (cs.cls === "over" || cs.cls === "low")) {
     const ok = await askConfirm({ title: "Kapasite dışı", text: "Toplam " + fmtTonRaw(totalTon) + " ton: " + cs.text + ". Yine de kaydedilsin mi?", okText: "Yine de kaydet" });
@@ -1454,6 +1562,10 @@ document.addEventListener("click", e => {
     case "exportPdf": exportPdfReport(); break;
     case "backup": exportBackup(); break;
     case "openActivity": openActivity(); break;
+    case "openColors": openColors(); break;
+    case "pickColor": pickColor(id); break;
+    case "newColorFor": openColors(orderSupplier()); break;
+    case "delColor": removeColor(id); break;
     case "showCnt": showCntDetail(id); break;
     case "goRow": goRow(id); break;
     case "arrAll": ui.arrAll = !ui.arrAll; renderArrivals(); break;
@@ -1469,6 +1581,7 @@ document.addEventListener("keydown", e => {
   if (e.key === "Enter" && e.target) {
     if (e.target.id === "inputPinCode") validateAndExecutePin();
     if (e.target.id === "inputCompName") addCompany();
+    if (e.target.id === "colCode" || e.target.id === "colName") addColor();
   }
 });
 
@@ -1781,6 +1894,7 @@ function startCloudSync() {
   });
   listen(proformasCol, docs => { proformas = docs; renderAll(); });
   listen(containersCol, docs => { containers = docs; renderAll(); });
+  listen(colorsCol, docs => { colors = docs; renderColors(); renderOrderChips(); });
   listen(activityCol, docs => {
     docs.sort((a, b) => (b.at || 0) - (a.at || 0));
     if (docs.length > 260) remoteBatch(b => docs.slice(200).forEach(d => b.delete(activityCol.doc(d.id))));   // eski kayıtları temizle
