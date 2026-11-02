@@ -308,7 +308,8 @@ function cardHtml(c) {
   const cost = isLoaded ? costOf(c) : 0, extra = Number(c.extraCost) || 0, u = unitOf(c);
   let money = "";
   if (cost) money = '<div class="money">' + esc(fmtMoney(cost)) + (u ? ' <small>· ' + esc(fmtPrice(u)) + " $/kg</small>" : "") + "</div>" +
-    (extra ? '<div class="dr"><span>Ek masraf</span><span>' + esc(fmtMoney(extra)) + "</span></div>" : "");
+    (extra ? '<div class="dr"><span>Ek masraf</span><span>' + esc(fmtMoney(extra)) + "</span></div>" : "") +
+    (Number(c.advance) ? '<div class="dr"><span>Ön ödeme</span><span>' + esc(fmtMoney(Number(c.advance))) + '</span></div><div class="dr"><span>Kalan ödeme</span><b>' + esc(fmtMoney(Math.round((cost - Number(c.advance)) * 100) / 100)) + "</b></div>" : "");
 
   return '<div class="card s-' + st + '"><div class="ch"><span class="ix">' + esc((idx[0] || "").trim()) + "<small>/ " + esc((idx[1] || "").trim()) + '</small></span><span class="st">' + STAGE[st].label + "</span></div>" +
     '<div class="cn">' + (c.no ? esc(c.no) : '<span class="muted">Konteyner no yok</span>') + "</div>" +

@@ -417,3 +417,7 @@ button.arr-chip:hover { background: var(--steel-soft); }
 details.bulk { margin-top: 12px; } details.bulk summary { cursor: pointer; font-weight: 600; color: var(--ink-2); font-size: 13px; }
 details.bulk textarea { width: 100%; min-height: 110px; margin: 8px 0; padding: 8px 10px; border: 1px solid var(--steel); border-radius: var(--r-s); font-family: var(--mono); font-size: 13px; }
 .mono { font-family: var(--mono); }
+
+.crow .adv { font-size: 11.5px; color: var(--ink-2); margin-top: 2px; }
+.crow .adv b { color: var(--st-red-ink); }
+.calc-row.bad b, .calc-row.bad span { color: var(--bad, #b42318); }

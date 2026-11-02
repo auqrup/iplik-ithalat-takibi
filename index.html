@@ -170,7 +170,10 @@
 
         <div class="calc">
           <div class="calc-title">Hesap</div>
-          <div class="f"><label for="statusExtraCost">Ek masraf ($) <span class="opt">(isteğe bağlı)</span></label><input type="number" step="0.01" id="statusExtraCost" inputmode="decimal" placeholder="Navlun, sigorta..."></div>
+          <div class="row2">
+            <div class="f"><label for="statusAdvance">Ön ödeme / avans ($) <span class="opt">(isteğe bağlı)</span></label><input type="number" step="0.01" min="0" id="statusAdvance" inputmode="decimal" placeholder="Firmaya daha önce yatırılan"></div>
+            <div class="f"><label for="statusExtraCost">Ek masraf ($) <span class="opt">(isteğe bağlı)</span></label><input type="number" step="0.01" min="0" id="statusExtraCost" inputmode="decimal" placeholder="Navlun, sigorta..."></div>
+          </div>
           <div id="calcSummary" class="calc-sum"></div>
           <div class="f" style="margin-top:10px;"><label for="statusCalcNote">Hesap notu</label><textarea id="statusCalcNote" placeholder="Örn: ek masraf navlun, kur farkı..."></textarea></div>
         </div>
