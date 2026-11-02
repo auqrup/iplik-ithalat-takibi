@@ -242,6 +242,9 @@ function orderKg(c) { return c.weightTon ? Math.round(c.weightTon * 1000) : 0; }
 // Birim fiyat proformadan gelir; tutar = net kilo x birim fiyat (elle girilmez)
 function unitOf(c) { const pf = findPf(c.pfId); return (pf && Number(pf.pricePerKg)) || Number(c.unitPrice) || 0; }
 function costOf(c) { const kg = Number(c.weightKg) || 0, u = unitOf(c); return kg && u ? round2(kg * u) : parseMoney(c.totalCost); }
+// Ön ödeme (avans): firmaya önceden yatırılan, konteyner bedelinden düşülür
+const advanceOf = c => Number(c.advance) || 0;
+const balanceOf = c => { const v = costOf(c); return v ? round2(v - advanceOf(c)) : 0; };
 function cartonsOf(c) { return (c.loadedItems || []).reduce((a, it) => a + (Number(it.cartons) || 0), 0); }
 function docLabel(c) { const d = c.docsStatus || "pending"; return d === "received" ? "Tamam" : d === "partial" ? "Eksik" : "Bekleniyor"; }
 function bestKg(c) {
@@ -311,6 +314,7 @@ function detailHtml(c) {
   R("Kilo fiyatı", u ? fmtPriceVal(u) + " $/kg" : "");
   R("Toplam tutar", cost ? fmtMoney(cost) : "");
   R("Ek masraf", extra ? fmtMoney(extra) : "");
+  if (loaded && advanceOf(c)) { R("Ön ödeme", fmtMoney(advanceOf(c))); R("Kalan ödeme", fmtMoney(balanceOf(c))); }
   R("Hesap notu", esc(c.calcNote || ""));
   R("Sipariş tarihi", c.orderDate ? esc(fmtDate(c.orderDate)) : "");
   R("Yükleme tarihi", c.loadingDate ? esc(fmtDate(c.loadingDate)) : "");
@@ -345,7 +349,7 @@ function blankContainer(pf, idx, total, stamp) {
     id: "cnt_" + stamp + "_" + idx,
     pfId: pf.id, supplier: pf.supplier, pfNo: pf.no, pfDate: pf.date || "",
     order: idx + " / " + total, orderIndex: idx,
-    no: "", shippingLine: "", blNo: "", weightTon: 0, weightKg: 0, totalCost: "", unitPrice: 0, extraCost: 0, calcNote: "", docsStatus: "pending", docsDate: "", docsNote: "",
+    no: "", shippingLine: "", blNo: "", weightTon: 0, weightKg: 0, totalCost: "", unitPrice: 0, extraCost: 0, advance: 0, calcNote: "", docsStatus: "pending", docsDate: "", docsNote: "",
     orderDate: "", orderItems: [], loadedItems: [], details: "",
     status: "white", loadingDate: "", arrivalDate: "", warehouseDate: "", warehouseName: "",
     statusBeforeWarehouse: ""
@@ -917,7 +921,7 @@ function calcNums() {
   const kg = parseFloat($("statusWeightKg").value) || 0;
   const c = findC($("statusCntId").value);
   const unit = c ? unitOf(c) : 0;
-  return { kg, unit, extra: parseFloat($("statusExtraCost").value) || 0, calc: kg && unit ? round2(kg * unit) : 0 };
+  return { kg, unit, extra: parseFloat($("statusExtraCost").value) || 0, advance: parseFloat($("statusAdvance").value) || 0, calc: kg && unit ? round2(kg * unit) : 0 };
 }
 function updateCalc() {
   const n = calcNums();
@@ -939,7 +943,11 @@ function updateCalc() {
     rows.push(["Toplam maliyet (ek masraf dahil)", fmtMoney(n.calc + n.extra), "strong"]);
     rows.push(["Kilo başına maliyet", fmtPriceVal((n.calc + n.extra) / n.kg) + " $/kg", "strong"]);
   }
-  rows.push(["Toplam tutar", n.calc ? fmtMoney(n.calc) : "—", "total"]);
+  if (n.advance && n.calc) {
+    rows.push(["Toplam tutar (kg × fiyat)", fmtMoney(n.calc), "strong"]);
+    rows.push(["Ön ödeme (düşülür)", "− " + fmtMoney(n.advance), ""]);
+    rows.push(["Kalan ödenecek tutar", fmtMoney(round2(n.calc - n.advance)), n.advance > n.calc ? "total bad" : "total"]);
+  } else rows.push(["Toplam tutar", n.calc ? fmtMoney(n.calc) : "—", "total"]);
   $("calcSummary").innerHTML = rows.map(r => '<div class="calc-row' + (r[2] ? " " + r[2] : "") + '"><span>' + esc(r[0]) + "</span><b>" + esc(r[1]) + "</b></div>").join("");
 }
 function refreshStatusCalc() { updateWeightCheck(); updateCalc(); }
@@ -948,7 +956,7 @@ document.addEventListener("change", e => { if (e.target.id === "colSupplier") re
 document.addEventListener("input", e => {
   const t = e.target;
   if (t.id === "statusWeightKg") { t.dataset.manual = t.value ? "1" : ""; refreshStatusCalc(); }
-  else if (t.id === "statusExtraCost") refreshStatusCalc();
+  else if (t.id === "statusExtraCost" || t.id === "statusAdvance") refreshStatusCalc();
   else if (t.id === "pfTotal" || t.id === "pfPlanTon" || t.id === "pfPriceKg") updatePfEstimate();
   else if (t.matches && t.matches(".loaded-kg-input")) { syncAutoWeight(); refreshStatusCalc(); }
   else if (t.matches && t.matches(".loaded-ctn-input")) updateCalc();
@@ -1018,6 +1026,7 @@ function openStatusModal(id) {
   $("statusBl").value = c.blNo || "";
   $("statusArrivalDate").value = c.arrivalDate || "";
   $("statusExtraCost").value = c.extraCost || "";
+  $("statusAdvance").value = c.advance || "";
   $("statusCalcNote").value = c.calcNote || "";
   $("statusErrorText").style.display = "none";
   $("statusSaveBtn").textContent = first ? "Yüklemeyi kaydet" : "Değişiklikleri kaydet";
@@ -1042,6 +1051,7 @@ async function submitStatus() {
   const blNo = $("statusBl").value.trim().toUpperCase();
   const weightKg = parseFloat($("statusWeightKg").value) || 0;
   const extraCost = parseFloat($("statusExtraCost").value) || 0;
+  const advance = Math.max(0, parseFloat($("statusAdvance").value) || 0);
   const calcNote = $("statusCalcNote").value.trim();
   const arrivalDate = $("statusArrivalDate").value;
   const n = calcNums();
@@ -1066,6 +1076,7 @@ async function submitStatus() {
   const cs = capState(weightKg);
   if (cs && (cs.cls === "over" || cs.cls === "low")) msgs.push("Toplam " + fmtTonRaw(weightKg / 1000) + " t: " + cs.text + ".");
   if (!n.unit) msgs.push("Proformada kilo fiyatı yok, tutar hesaplanamadı.");
+  if (advance && n.calc && advance > n.calc) msgs.push("Ön ödeme (" + fmtMoney(advance) + ") toplam tutardan (" + fmtMoney(n.calc) + ") fazla.");
   if (msgs.length) {
     const ok = await askConfirm({ title: "Kontrol edin", text: msgs.join(" ") + " Yine de kaydedilsin mi?", okText: "Yine de kaydet" });
     if (!ok) return;
@@ -1074,7 +1085,7 @@ async function submitStatus() {
   if (!(await confirmSave("modalStatus"))) return;
   const c = findC(id);
   if (!c) return;
-  const patch = { no, loadingDate, shippingLine, blNo, weightKg, totalCost: n.calc ? String(n.calc) : "", unitPrice: n.unit, extraCost, calcNote, arrivalDate, loadedItems };
+  const patch = { no, loadingDate, shippingLine, blNo, weightKg, totalCost: n.calc ? String(n.calc) : "", unitPrice: n.unit, extraCost, advance, calcNote, arrivalDate, loadedItems };
   // Sadece ilk yüklemede yeşile geçer; düzenleme mevcut aşamayı bozmaz
   const firstLoad = stageOf(c) === "yellow" || stageOf(c) === "white";
   if (firstLoad) patch.status = "green";
@@ -1194,7 +1205,7 @@ function activeContainers() {
 }
 
 function pfStats(pf, list) {
-  const s = { count: list.length, white: 0, yellow: 0, green: 0, red: 0, blue: 0, orderedKg: 0, loadedKg: 0, deliveredKg: 0, money: 0, extra: 0, costKg: 0, estMoney: 0, cartons: 0 };
+  const s = { count: list.length, white: 0, yellow: 0, green: 0, red: 0, blue: 0, orderedKg: 0, loadedKg: 0, deliveredKg: 0, money: 0, extra: 0, advance: 0, costKg: 0, estMoney: 0, cartons: 0 };
   list.forEach(c => {
     const st = stageOf(c);
     s[st]++;
@@ -1203,7 +1214,7 @@ function pfStats(pf, list) {
       s.loadedKg += bestKg(c);
       s.cartons += cartonsOf(c);
       const m = costOf(c);
-      if (m) { s.money += m; s.extra += Number(c.extraCost) || 0; s.costKg += bestKg(c); }
+      if (m) { s.money += m; s.extra += Number(c.extraCost) || 0; s.advance += advanceOf(c); s.costKg += bestKg(c); }
     }
     if (st === "yellow" && pf && pf.pricePerKg) s.estMoney += orderKg(c) * pf.pricePerKg;
     if (st === "blue") s.deliveredKg += bestKg(c);
@@ -1296,6 +1307,7 @@ function renderRow(c, archived) {
   if (loaded && cartonsOf(c)) meta += '<div class="numl">' + fmtNum(cartonsOf(c)) + " karton</div>";
   const costV = costOf(c);
   if (loaded && costV) meta += '<div class="cost">' + esc(fmtMoney(costV)) + (unitOf(c) ? '<span class="unit"> · ' + esc(fmtPriceVal(unitOf(c))) + " $/kg</span>" : "") + "</div>";
+  if (loaded && costV && advanceOf(c)) meta += '<div class="adv">Ön ödeme ' + esc(fmtMoney(advanceOf(c))) + " · <b>Kalan " + esc(fmtMoney(balanceOf(c))) + "</b></div>";
   const pfx = findPf(c.pfId);
   if (st === "yellow" && pfx && pfx.pricePerKg && kg) meta += '<div class="est">≈ ' + esc(fmtMoney(kg * pfx.pricePerKg)) + " tahmini</div>";
 
@@ -1366,6 +1378,7 @@ function renderPfCard(pf, opt) {
   if (s.cartons) stats.push(["Karton", fmtNum(s.cartons)]);
   if (s.deliveredKg) stats.push(["Depoya girişi", fmtTon(s.deliveredKg)]);
   if (s.money) stats.push(["Yüklenen tutar", fmtMoney(s.money)]);
+  if (s.advance) { stats.push(["Ön ödeme", fmtMoney(s.advance)]); stats.push(["Kalan ödeme", fmtMoney(round2(s.money - s.advance))]); }
   if (s.estMoney) stats.push(["Siparişteki tahmini", fmtMoney(s.estMoney)]);
   if (s.money && s.costKg) stats.push(["Ort. maliyet", fmtPriceVal((s.money + s.extra) / s.costKg) + " $/kg"]);
 
@@ -1760,6 +1773,8 @@ async function exportDetailedExcel() {
     { header: "Birim fiyat ($/kg)", key: "unit", width: 14 },
     { header: "Ek masraf ($)", key: "extra", width: 14 },
     { header: "Toplam maliyet ($)", key: "landed", width: 16 },
+    { header: "Ön ödeme ($)", key: "advance", width: 14 },
+    { header: "Kalan ödeme ($)", key: "balance", width: 16 },
     { header: "Maliyet ($/kg)", key: "perkg", width: 14 },
     { header: "Sipariş tarihi", key: "orderDate", width: 14 },
     { header: "Yükleme tarihi", key: "loadDate", width: 14 },
@@ -1777,7 +1792,7 @@ async function exportDetailedExcel() {
     cell.border = border;
   });
 
-  let totalKg = 0, ordered = 0, onTheWay = 0, delivered = 0, totalInvoice = 0, totalExtra = 0, totalCartons = 0;
+  let totalKg = 0, ordered = 0, onTheWay = 0, delivered = 0, totalInvoice = 0, totalExtra = 0, totalAdvance = 0, totalCartons = 0;
   const bySupplier = {};
 
   rows.forEach(c => {
@@ -1799,14 +1814,14 @@ async function exportDetailedExcel() {
     else if (c.orderItems && c.orderItems.length) items = c.orderItems.map(i => i.code + ": " + fmtTonRaw(i.ton) + " t").join(" | ");
 
     const invoice = costOf(c), extra = Number(c.extraCost) || 0;
-    totalInvoice += invoice; totalExtra += extra; totalCartons += cartonsOf(c);
+    totalAdvance += advanceOf(c); totalInvoice += invoice; totalExtra += extra; totalCartons += cartonsOf(c);
     const kgForCost = c.weightKg || kg;
     const row = ws.addRow({
       supplier: c.supplier || "", pfNo: c.pfNo || "", pfDate: fmtDate(c.pfDate), inc: pf.incoterm || "—",
       order: c.order || "",
       no: c.no || "—", line: c.shippingLine || "—", bl: c.blNo || "—",
       status: STAGE[st].label, desk: pf.isArchived ? "Arşivde" : "Aktif",
-      docs: loaded ? docLabel(c) : "—", docsDate: loaded && c.docsDate ? fmtDate(c.docsDate) : "—", kg: kg || null, cartons: cartonsOf(c) || null, cost: invoice || null, unit: unitOf(c) || null, extra: extra || null, landed: invoice ? invoice + extra : null, perkg: invoice && kgForCost ? Math.round((invoice + extra) / kgForCost * 10000) / 10000 : null,
+      docs: loaded ? docLabel(c) : "—", docsDate: loaded && c.docsDate ? fmtDate(c.docsDate) : "—", kg: kg || null, cartons: cartonsOf(c) || null, cost: invoice || null, unit: unitOf(c) || null, extra: extra || null, landed: invoice ? invoice + extra : null, advance: advanceOf(c) || null, balance: invoice && advanceOf(c) ? round2(invoice - advanceOf(c)) : null, perkg: invoice && kgForCost ? Math.round((invoice + extra) / kgForCost * 10000) / 10000 : null,
       orderDate: fmtDate(c.orderDate) || "—", loadDate: fmtDate(c.loadingDate) || "—",
       arrival: fmtDate(c.arrivalDate) || "—", whDate: fmtDate(c.warehouseDate) || "—",
       whName: c.warehouseName || "—", items
@@ -1817,10 +1832,10 @@ async function exportDetailedExcel() {
     row.getCell("status").font = { bold: true };
     row.getCell("kg").numFmt = "#,##0";
     row.getCell("kg").alignment = { vertical: "middle", horizontal: "right" };
-    ["cost", "extra", "landed"].forEach(k => { row.getCell(k).numFmt = "#,##0.00"; row.getCell(k).alignment = { vertical: "middle", horizontal: "right" }; });
+    ["cost", "extra", "landed", "advance", "balance"].forEach(k => { row.getCell(k).numFmt = "#,##0.00"; row.getCell(k).alignment = { vertical: "middle", horizontal: "right" }; });
     ["unit", "perkg"].forEach(k => { row.getCell(k).numFmt = "0.0000"; row.getCell(k).alignment = { vertical: "middle", horizontal: "right" }; });
   });
-  ws.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: 25 } };
+  ws.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: 27 } };
 
   const sm = wb.addWorksheet("Özet");
   sm.columns = [{ width: 38 }, { width: 26 }, { width: 18 }];
@@ -1835,7 +1850,9 @@ async function exportDetailedExcel() {
     ["Toplam ağırlık", fmtNum(totalKg) + " kg (" + (totalKg / 1000).toFixed(2) + " ton)", "FFF2CC"],
     ["Toplam karton", fmtNum(totalCartons) + " adet", "ECEFF2"],
     ["Toplam tutar", fmtMoney(totalInvoice), "DCE8FB"],
-    ["Toplam maliyet (tutar + ek masraf)", fmtMoney(totalInvoice + totalExtra), "DCE8FB"]
+    ["Toplam maliyet (tutar + ek masraf)", fmtMoney(totalInvoice + totalExtra), "DCE8FB"],
+    ["Toplam ön ödeme", fmtMoney(totalAdvance), "FFF2CC"],
+    ["Kalan ödeme (tutar − ön ödeme)", fmtMoney(totalInvoice - totalAdvance), "FFF2CC"]
   ].forEach(l => {
     const r = sm.addRow([l[0], l[1]]);
     r.eachCell(cell => { cell.fill = fill(l[2]); cell.border = border; });
