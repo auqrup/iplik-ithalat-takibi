@@ -925,30 +925,43 @@ function calcNums() {
 }
 function updateCalc() {
   const n = calcNums();
-  const rows = [];
-  if (n.unit) rows.push(["Kilo fiyatı (proformadan)", fmtPriceVal(n.unit) + " $/kg", ""]);
-  else rows.push(["Kilo fiyatı", "proformada girilmemiş", "bad"]);
-  if (n.calc) rows.push(["Hesap", fmtNum(n.kg) + " kg × " + fmtPriceVal(n.unit) + " $", ""]);
   const c = findC($("statusCntId").value);
+  const R = (l, v, cls) => '<div class="calc-row' + (cls ? " " + cls : "") + '"><span>' + esc(l) + "</span><b>" + esc(v) + "</b></div>";
+  // bilgi satırları
+  let info = "";
+  if (n.unit) info += R("Kilo fiyatı (proformadan)", fmtPriceVal(n.unit) + " $/kg");
+  else info += R("Kilo fiyatı", "proformada girilmemiş", "bad");
   const planKg = c ? orderKg(c) : 0;
   if (planKg && n.kg) {
     const d = n.kg - planKg;
-    rows.push(["Plana göre", fmtTonRaw(n.kg / 1000) + " t, plan " + fmtTonRaw(planKg / 1000) + " t (" + (d >= 0 ? "+" : "−") + fmtTonRaw(Math.abs(d) / 1000) + " t)", ""]);
+    info += R("Plana göre", fmtTonRaw(n.kg / 1000) + " t, plan " + fmtTonRaw(planKg / 1000) + " t (" + (d >= 0 ? "+" : "−") + fmtTonRaw(Math.abs(d) / 1000) + " t)");
   }
   let ctn = 0;
   document.querySelectorAll("#loadedItemsContainer .loaded-ctn-input").forEach(i => { ctn += parseFloat(i.value) || 0; });
-  if (ctn) rows.push(["Toplam karton", fmtNum(ctn) + (n.kg ? " (ort. " + fmtNum(Math.round(n.kg / ctn * 100) / 100) + " kg/karton)" : ""), ""]);
-  if (n.calc && n.extra) {
-    rows.push(["Ek masraf", fmtMoney(n.extra), ""]);
-    rows.push(["Toplam maliyet (ek masraf dahil)", fmtMoney(n.calc + n.extra), "strong"]);
-    rows.push(["Kilo başına maliyet", fmtPriceVal((n.calc + n.extra) / n.kg) + " $/kg", "strong"]);
+  if (ctn) info += R("Toplam karton", fmtNum(ctn) + (n.kg ? " (ort. " + fmtNum(Math.round(n.kg / ctn * 100) / 100) + " kg/karton)" : ""));
+  let h = '<div class="cb cb-info">' + info + "</div>";
+  if (!n.calc) {
+    h += '<div class="cb cb-total"><div class="cb-h">Ödenecek toplam</div><div class="cb-big">—</div></div>';
+    $("calcSummary").innerHTML = h; return;
   }
-  if (n.advance && n.calc) {
-    rows.push(["Toplam tutar (kg × fiyat)", fmtMoney(n.calc), "strong"]);
-    rows.push(["Ön ödeme (düşülür)", "− " + fmtMoney(n.advance), ""]);
-    rows.push(["Kalan ödenecek tutar", fmtMoney(round2(n.calc - n.advance)), n.advance > n.calc ? "total bad" : "total"]);
-  } else rows.push(["Toplam tutar", n.calc ? fmtMoney(n.calc) : "—", "total"]);
-  $("calcSummary").innerHTML = rows.map(r => '<div class="calc-row' + (r[2] ? " " + r[2] : "") + '"><span>' + esc(r[0]) + "</span><b>" + esc(r[1]) + "</b></div>").join("");
+  const rest = round2(n.calc - n.advance);
+  const pay = round2(rest + n.extra);
+  // 1) Firmaya
+  h += '<div class="cb cb-firm"><div class="cb-h"><i>1</i> Firmaya (tedarikçiye) ödenecek</div>' +
+    R("Mal bedeli: " + fmtNum(n.kg) + " kg × " + fmtPriceVal(n.unit) + " $", fmtMoney(n.calc)) +
+    (n.advance ? R("Ön ödeme (daha önce yatırılan)", "− " + fmtMoney(n.advance)) : "") +
+    R(n.advance ? "Firmaya kalan" : "Firmaya ödenecek", fmtMoney(rest), "sub" + (rest < 0 ? " bad" : "")) + "</div>";
+  // 2) Ek masraf
+  h += '<div class="cb cb-extra"><div class="cb-h"><i>2</i> Ek masraf (ayrı ödenir)</div>' +
+    R("Navlun, sigorta vb.", n.extra ? fmtMoney(n.extra) : "yok", "sub") + "</div>";
+  // Toplam
+  h += '<div class="cb cb-total"><div class="cb-h">Bu konteyner için ÖDENECEK TOPLAM</div><div class="cb-big">' + esc(fmtMoney(pay)) + "</div>" +
+    '<div class="cb-eq">' + esc(fmtMoney(rest) + " (firma) + " + fmtMoney(n.extra) + " (ek masraf)") + "</div></div>";
+  // Maliyet
+  h += '<div class="cb cb-cost"><div class="cb-h">Maliyet (bilgi)</div>' +
+    R("Toplam maliyet (mal + ek masraf)", fmtMoney(n.calc + n.extra)) +
+    (n.kg ? R("Kilo başına maliyet", fmtPriceVal((n.calc + n.extra) / n.kg) + " $/kg", "strong") : "") + "</div>";
+  $("calcSummary").innerHTML = h;
 }
 function refreshStatusCalc() { updateWeightCheck(); updateCalc(); }
 
