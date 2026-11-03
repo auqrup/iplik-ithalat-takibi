@@ -435,3 +435,15 @@ details.bulk textarea { width: 100%; min-height: 110px; margin: 8px 0; padding: 
 .cb-big { font-family: var(--mono); font-weight: 700; font-size: 28px; margin: 4px 0; }
 .cb-eq { font-size: 12px; opacity: .8; font-family: var(--mono); }
 .cb-cost .calc-row { font-size: 12px; color: #55606b; }
+
+/* taşma düzeltmeleri */
+.calc, .calc-sum, .cb { box-sizing: border-box; max-width: 100%; min-width: 0; }
+.calc-row { align-items: baseline; }
+.calc-row span { min-width: 0; overflow-wrap: anywhere; }
+.calc-row b { white-space: nowrap; flex: none; }
+.cb-h { flex-wrap: wrap; min-width: 0; overflow-wrap: anywhere; }
+.cb-firm, .cb-extra { box-sizing: border-box; overflow: hidden; }
+.cb-total { box-sizing: border-box; overflow: hidden; }
+.cb-big { font-size: clamp(22px, 7vw, 28px); overflow-wrap: anywhere; }
+.cb-eq { overflow-wrap: anywhere; }
+.cb .calc-row.sub { font-size: 14px; }

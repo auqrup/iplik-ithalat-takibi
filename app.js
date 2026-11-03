@@ -946,17 +946,16 @@ function updateCalc() {
   }
   const rest = round2(n.calc - n.advance);
   const pay = round2(rest + n.extra);
-  // 1) Firmaya
-  h += '<div class="cb cb-firm"><div class="cb-h"><i>1</i> Firmaya (tedarikçiye) ödenecek</div>' +
-    R("Mal bedeli: " + fmtNum(n.kg) + " kg × " + fmtPriceVal(n.unit) + " $", fmtMoney(n.calc)) +
-    (n.advance ? R("Ön ödeme (daha önce yatırılan)", "− " + fmtMoney(n.advance)) : "") +
-    R(n.advance ? "Firmaya kalan" : "Firmaya ödenecek", fmtMoney(rest), "sub" + (rest < 0 ? " bad" : "")) + "</div>";
+  // 1) Mal değeri
+  h += '<div class="cb cb-firm"><div class="cb-h"><i>1</i> Mal değeri</div>' +
+    R(fmtNum(n.kg) + " kg × " + fmtPriceVal(n.unit) + " $", fmtMoney(n.calc), "sub") +
+    (n.advance ? R("Ön ödeme (düşülür)", "− " + fmtMoney(n.advance)) + R("Firmaya kalan", fmtMoney(rest), "sub" + (rest < 0 ? " bad" : "")) : "") + "</div>";
   // 2) Ek masraf
-  h += '<div class="cb cb-extra"><div class="cb-h"><i>2</i> Ek masraf (ayrı ödenir)</div>' +
-    R("Navlun, sigorta vb.", n.extra ? fmtMoney(n.extra) : "yok", "sub") + "</div>";
+  h += '<div class="cb cb-extra"><div class="cb-h"><i>2</i> Ek masraf (sigorta, navlun...)</div>' +
+    R("Tutar", n.extra ? fmtMoney(n.extra) : "yok", "sub") + "</div>";
   // Toplam
   h += '<div class="cb cb-total"><div class="cb-h">Bu konteyner için ÖDENECEK TOPLAM</div><div class="cb-big">' + esc(fmtMoney(pay)) + "</div>" +
-    '<div class="cb-eq">' + esc(fmtMoney(rest) + " (firma) + " + fmtMoney(n.extra) + " (ek masraf)") + "</div></div>";
+    '<div class="cb-eq">' + esc(fmtMoney(rest) + " (mal) + " + fmtMoney(n.extra) + " (ek masraf)") + "</div></div>";
   // Maliyet
   h += '<div class="cb cb-cost"><div class="cb-h">Maliyet (bilgi)</div>' +
     R("Toplam maliyet (mal + ek masraf)", fmtMoney(n.calc + n.extra)) +
