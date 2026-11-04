@@ -137,8 +137,12 @@ body { margin:0; background:var(--page); color:var(--ink); font-family:var(--fon
 .legend { display:flex; flex-wrap:wrap; gap:6px 14px; font-size:12px; color:var(--ink-2); margin:-6px 0 16px; align-items:center; }
 .legend i { display:inline-block; width:12px; height:12px; border-radius:2px; vertical-align:-2px; margin-right:5px; background:var(--bg); border:1px solid var(--steel); border-left:5px solid var(--c); }
 .hint { color:var(--muted); margin-left:auto; }
-#panel { position:fixed; top:0; right:0; bottom:0; width:340px; max-width:100%; background:#fff; border-left:1px solid var(--steel); box-shadow:-8px 0 24px rgba(18,40,58,.18); z-index:50; transform:translateX(104%); transition:transform .16s ease; overflow:auto; padding:14px 14px 24px; }
-#panel.open { transform:none; }
+#panel { position:fixed; left:0; top:0; width:380px; max-width:calc(100vw - 24px); max-height:calc(100vh - 24px); background:#fff; border:1px solid var(--steel); border-radius:16px; box-shadow:0 18px 50px rgba(18,40,58,.32); z-index:60; overflow:auto; padding:14px 14px 18px; opacity:0; transform:scale(.6); visibility:hidden; pointer-events:none; transform-origin:var(--ox,50%) var(--oy,50%); transition:transform .28s cubic-bezier(.34,1.56,.64,1), opacity .18s ease, visibility 0s linear .28s; }
+#panel.open { opacity:1; transform:scale(1); visibility:visible; transition:transform .28s cubic-bezier(.34,1.56,.64,1), opacity .18s ease, visibility 0s; }
+#panel.open.pinned { pointer-events:auto; width:440px; }
+#panel.tip .px { display:none; }
+#pback { position:fixed; inset:0; background:rgba(18,40,58,.38); z-index:55; opacity:0; visibility:hidden; transition:opacity .2s ease, visibility 0s linear .2s; }
+#pback.open { opacity:1; visibility:visible; transition:opacity .2s ease; }
 #panel .px { position:sticky; top:0; float:right; border:0; background:var(--steel-soft); width:30px; height:30px; border-radius:15px; font-size:18px; line-height:1; cursor:pointer; color:var(--ink); z-index:2; }
 #panel .pfl { font-size:12px; color:var(--ink-2); margin-bottom:10px; padding-right:36px; }
 #panel .pfl b { font-family:var(--mono); font-size:15px; color:var(--ink); display:block; }
@@ -178,8 +182,7 @@ body { margin:0; background:var(--page); color:var(--ink); font-family:var(--fon
   .head h2 { font-size:24px; }
   .head .sp { margin-left:0; width:100%; }
   .cards { grid-template-columns:1fr 1fr; }
-  #panel { width:100%; top:auto; height:62%; border-left:0; border-top:1px solid var(--steel); transform:translateY(104%); }
-  #panel.open { transform:none; }
+  #panel.open.pinned { width:calc(100vw - 24px); }
   .hint { display:none; }
 }
 @media (max-width:460px) { .cards { grid-template-columns:1fr; } }
@@ -194,6 +197,7 @@ body { margin:0; background:var(--page); color:var(--ink); font-family:var(--fon
   <div class="chips" id="chips"></div>
   <div id="view"><div class="empty">Veriler yükleniyor…</div></div>
 </div>
+<div id="pback" data-close="1"></div>
 <div id="panel" aria-live="polite"></div>
 <div id="pdfArea"></div>
 
@@ -408,7 +412,7 @@ function render() {
   html += soonHtml(list);
   if (!pfs.length) html += '<div class="empty">Bu firmada gösterilecek proforma yok.</div>';
   if (viewMode === "yarn") { html += yarnHtml(list); $("view").innerHTML = html; return; }
-  html += '<div class="legend">' + STAGE_ORDER.map(k => '<span class="s-' + k + '"><i></i>' + STAGE[k].label + "</span>").join("") + '<span class="hint">Kutunun üzerine gelin veya tıklayın: detaylar sağda açılır</span></div>';
+  html += '<div class="legend">' + STAGE_ORDER.map(k => '<span class="s-' + k + '"><i></i>' + STAGE[k].label + "</span>").join("") + '<span class="hint">Kutunun üzerine gelin veya tıklayın: detaylar açılır</span></div>';
   html += '<div class="board">' + pfs.map(pf => {
     const l = list.filter(c => c.pfId === pf.id).sort(byIndex);
     return '<div class="col"><div class="colh"><b>' + esc(pf.no) + "</b><small>" + esc(fmtDate(pf.date)) + "</small>" + (pf.isArchived ? '<small><span class="arc">Arşiv</span></small>' : "") + "</div>" +
@@ -419,18 +423,42 @@ function render() {
 
 /* ---------- Sağ detay paneli: üzerine gelince önizleme, tıklayınca sabitlenir ---------- */
 let pinned = "";
+function placePanel(q, pin) {
+  const p = $("panel"), vw = innerWidth, vh = innerHeight;
+  const w = p.offsetWidth, h = p.offsetHeight;
+  let x, y, ox, oy;
+  if (pin || !q) {
+    x = (vw - w) / 2; y = Math.max(12, (vh - h) / 2); ox = 50; oy = 50;
+    if (q) { const r = q.getBoundingClientRect(); ox = Math.max(0, Math.min(100, (r.left + r.width / 2 - x) / w * 100)); oy = Math.max(0, Math.min(100, (r.top + r.height / 2 - y) / h * 100)); }
+  } else {
+    const r = q.getBoundingClientRect(), gap = 12;
+    x = r.right + gap; ox = 0;
+    if (x + w > vw - 12) { x = r.left - gap - w; ox = 100; }
+    if (x < 12) { x = Math.max(12, Math.min(vw - w - 12, r.left + r.width / 2 - w / 2)); ox = 50; }
+    y = r.top + r.height / 2 - h / 2;
+    y = Math.max(12, Math.min(vh - h - 12, y));
+    oy = Math.max(0, Math.min(100, (r.top + r.height / 2 - y) / h * 100));
+  }
+  p.style.left = Math.round(x) + "px"; p.style.top = Math.round(y) + "px";
+  p.style.setProperty("--ox", ox + "%"); p.style.setProperty("--oy", oy + "%");
+}
 function showPanel(id, pin) {
   const c = containers.find(x => x.id === id); if (!c) return;
   const pf = findPf(c.pfId) || {};
-  $("panel").innerHTML = '<button class="px" data-close="1" aria-label="Kapat">×</button><div class="pfl"><b>' + esc(pf.no || "") + "</b>" + esc([pf.incoterm, fmtDate(pf.date), pf.pricePerKg ? fmtPrice(pf.pricePerKg) + " $/kg" : ""].filter(Boolean).join(" · ")) + (pf.note ? "<br>" + esc(pf.note) : "") + "</div>" + cardHtml(c) + (pin ? "" : '<div class="pin">Sabitlemek için tıklayın</div>');
-  $("panel").classList.add("open");
+  const p = $("panel");
+  p.innerHTML = '<button class="px" data-close="1" aria-label="Kapat">×</button><div class="pfl"><b>' + esc(pf.no || "") + "</b>" + esc([pf.incoterm, fmtDate(pf.date), pf.pricePerKg ? fmtPrice(pf.pricePerKg) + " $/kg" : ""].filter(Boolean).join(" · ")) + (pf.note ? "<br>" + esc(pf.note) : "") + "</div>" + cardHtml(c) + (pin ? "" : '<div class="pin">Büyütmek için tıklayın</div>');
   document.querySelectorAll(".sq.sel").forEach(e => e.classList.remove("sel"));
   const q = document.querySelector('.sq[data-cid="' + (window.CSS && CSS.escape ? CSS.escape(id) : id) + '"]'); if (q) q.classList.add("sel");
+  const src = q || document.querySelector('[data-cid="' + (window.CSS && CSS.escape ? CSS.escape(id) : id) + '"]');
+  p.classList.toggle("pinned", !!pin); p.classList.toggle("tip", !pin);
+  $("pback").classList.toggle("open", !!pin);
+  placePanel(src, pin);
+  p.classList.add("open");
 }
-function hidePanel() { pinned = ""; $("panel").classList.remove("open"); document.querySelectorAll(".sq.sel").forEach(e => e.classList.remove("sel")); }
+function hidePanel() { pinned = ""; const p = $("panel"); p.classList.remove("open", "pinned"); $("pback").classList.remove("open"); document.querySelectorAll(".sq.sel").forEach(e => e.classList.remove("sel")); }
 const canHover = window.matchMedia && matchMedia("(hover:hover)").matches;
 document.addEventListener("mouseover", e => { const q = e.target.closest(".sq,.soon-i,.amt"); if (q && canHover && !pinned) showPanel(q.dataset.cid, false); });
-document.addEventListener("mouseout", e => { const q = e.target.closest(".sq,.soon-i,.amt"); if (q && canHover && !pinned && !(e.relatedTarget && e.relatedTarget.closest && e.relatedTarget.closest(".sq,.soon-i,.amt"))) $("panel").classList.remove("open"), q.classList.remove("sel"); });
+document.addEventListener("mouseout", e => { const q = e.target.closest(".sq,.soon-i,.amt"); if (q && canHover && !pinned && !(e.relatedTarget && e.relatedTarget.closest && e.relatedTarget.closest(".sq,.soon-i,.amt"))) hidePanel(); });
 document.addEventListener("keydown", e => { if (e.key === "Escape") hidePanel(); });
 
 document.addEventListener("click", e => {
