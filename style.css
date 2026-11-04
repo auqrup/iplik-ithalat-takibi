@@ -447,3 +447,9 @@ details.bulk textarea { width: 100%; min-height: 110px; margin: 8px 0; padding: 
 .cb-big { font-size: clamp(22px, 7vw, 28px); overflow-wrap: anywhere; }
 .cb-eq { overflow-wrap: anywhere; }
 .cb .calc-row.sub { font-size: 14px; }
+
+/* sağ bölüm (tarihler): daha büyük ve okunaklı yazı */
+.c-dates { gap: 4px; font-size: 15px; }
+.dk { color: var(--ink-2); min-width: 112px; font-size: 15px; }
+.dv { font-size: 15px; font-weight: 700; }
+.rel { font-size: 14px; font-weight: 700; }
