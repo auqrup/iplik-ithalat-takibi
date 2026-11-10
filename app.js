@@ -240,8 +240,48 @@ const findPf = id => proformas.find(p => p.id === id);
 
 function orderKg(c) { return c.weightTon ? Math.round(c.weightTon * 1000) : 0; }
 // Birim fiyat proformadan gelir; tutar = net kilo x birim fiyat (elle girilmez)
-function unitOf(c) { const pf = findPf(c.pfId); return (pf && Number(pf.pricePerKg)) || Number(c.unitPrice) || 0; }
-function costOf(c) { const kg = Number(c.weightKg) || 0, u = unitOf(c); return kg && u ? round2(kg * u) : parseMoney(c.totalCost); }
+const normCode = x => String(x || "").trim().toUpperCase().replace(/\s+/g, " ");
+// Proformada bazı iplikler için farklı fiyat varsa: pf.prices = [{code, price}]
+const specialPrices = pf => ((pf && pf.prices) || []).filter(x => normCode(x.code) && Number(x.price) > 0);
+function priceFor(pf, code) {
+  const k = normCode(code);
+  const r = k && specialPrices(pf).find(x => normCode(x.code) === k);
+  return r ? Number(r.price) : (pf ? Number(pf.pricePerKg) || 0 : 0);
+}
+// Kalem kalem tutar: her iplik kendi fiyatıyla; kalemlerde olmayan kalan kilo genel fiyatla
+function costLines(pf, items, totalKg) {
+  const base = pf ? Number(pf.pricePerKg) || 0 : 0;
+  const lines = []; let used = 0, sum = 0;
+  (items || []).forEach(it => {
+    const kg = Number(it.kg) || 0; if (kg <= 0) return;
+    const price = priceFor(pf, it.code);
+    lines.push({ code: it.code || "", kg, price, amt: round2(kg * price), special: !!price && price !== base });
+    used += kg; sum += kg * price;
+  });
+  const rest = totalKg - used;
+  if (rest > 0.5) { lines.push({ code: "", kg: rest, price: base, amt: round2(rest * base), rest: true }); sum += rest * base; }
+  return { lines, total: round2(sum) };
+}
+function unitOf(c) {
+  const pf = findPf(c.pfId), kg = Number(c.weightKg) || 0;
+  if (kg && specialPrices(pf).length) { const t = costLines(pf, c.loadedItems, kg).total; if (t) return t / kg; }
+  return (pf && Number(pf.pricePerKg)) || Number(c.unitPrice) || 0;
+}
+function costOf(c) {
+  const pf = findPf(c.pfId), kg = Number(c.weightKg) || 0;
+  if (kg && specialPrices(pf).length) { const t = costLines(pf, c.loadedItems, kg).total; if (t) return t; }
+  const u = unitOf(c); return kg && u ? round2(kg * u) : parseMoney(c.totalCost);
+}
+// Sipariş aşamasında tahmini tutar (iplik bazlı fiyatlarla)
+function estOf(c) {
+  const pf = findPf(c.pfId); if (!pf) return 0;
+  const kg = orderKg(c);
+  if (specialPrices(pf).length && (c.orderItems || []).length) return costLines(pf, c.orderItems.map(o => ({ code: o.code, kg: (Number(o.ton) || 0) * 1000 })), kg).total;
+  return pf.pricePerKg ? kg * pf.pricePerKg : 0;
+}
+function specialChips(pf) {
+  return specialPrices(pf).map(x => '<span class="pf-price sp-price">' + esc(x.code) + ": " + fmtPriceVal(Number(x.price)) + " $/kg</span>").join("");
+}
 // Ön ödeme (avans): firmaya önceden yatırılan, konteyner bedelinden düşülür
 const advanceOf = c => Number(c.advance) || 0;
 const balanceOf = c => { const v = costOf(c); return v ? round2(v - advanceOf(c)) : 0; };
@@ -503,13 +543,24 @@ function updateIncotermHelp() {
   $("pfIncotermHelp").textContent = v && INCOTERMS[v] ? INCOTERMS[v].hint : "";
 }
 
+function addPriceRow(code, price) {
+  $("pfPriceRows").appendChild(buildYarnRow("pf-pcode", "pf-pprice", "$/kg", "0.0001", code, price, updatePfEstimate));
+}
+function readPriceRows() {
+  const out = [];
+  document.querySelectorAll("#pfPriceRows .yarn-row").forEach(r => {
+    const code = r.querySelector(".pf-pcode").value.trim(), price = parseFloat(r.querySelector(".pf-pprice").value) || 0;
+    if (code || price) out.push({ code, price });
+  });
+  return out;
+}
 function updatePfEstimate() {
   const n = parseInt($("pfTotal").value, 10) || 0;
   const plan = parseFloat($("pfPlanTon").value) || 0;
   const price = parseFloat($("pfPriceKg").value) || 0;
   const parts = [];
   if (n && plan) parts.push(n + " konteyner × " + fmtTonRaw(plan) + " t = " + fmtTonRaw(n * plan) + " t");
-  if (n && plan && price) parts.push("tahmini " + fmtMoney(n * plan * 1000 * price));
+  if (n && plan && price && !readPriceRows().length) parts.push("tahmini " + fmtMoney(n * plan * 1000 * price));
   let txt = parts.join(" → ");
   const cs = capState(plan * 1000);
   if (cs && cs.cls !== "ok") txt += (txt ? " · " : "") + "plan " + cs.text;
@@ -541,6 +592,7 @@ function openProformaModal(pfId, presetSupplier) {
     $("pfTotal").value = containers.filter(c => c.pfId === p.id).length || p.total;
     $("pfTotal").disabled = false;
     $("pfPriceKg").value = p.pricePerKg || "";
+    $("pfPriceRows").innerHTML = ""; (p.prices || []).forEach(x => addPriceRow(x.code, x.price));
     $("pfPlanTon").value = p.planTon || DEFAULT_PLAN_TON;
     $("pfNote").value = p.note || "";
     $("pfSaveBtn").textContent = "Değişiklikleri kaydet";
@@ -556,6 +608,7 @@ function openProformaModal(pfId, presetSupplier) {
     $("pfTotal").value = 3;
     $("pfTotal").disabled = false;
     $("pfPriceKg").value = "";
+    $("pfPriceRows").innerHTML = "";
     $("pfPlanTon").value = DEFAULT_PLAN_TON;
     $("pfNote").value = "";
     $("pfSaveBtn").textContent = "Proformayı kaydet";
@@ -574,6 +627,7 @@ async function saveProforma() {
   const pricePerKg = parseFloat($("pfPriceKg").value) || 0;
   const planTon = parseFloat($("pfPlanTon").value) || DEFAULT_PLAN_TON;
   const note = $("pfNote").value.trim();
+  const prices = readPriceRows().map(x => ({ code: x.code, price: x.price }));
   const err = $("pfError");
 
   const fail = msg => { err.textContent = msg; err.style.display = "block"; };
@@ -581,6 +635,9 @@ async function saveProforma() {
   if (!no) return fail("Proforma numarasını yazın.");
   if (!incoterm) return fail("Teslim şeklini seçin (FOB, CNF...).");
   if (!total || total < 1) return fail("Konteyner sayısı en az 1 olmalı.");
+  for (const x of prices) { if (!x.code || !(x.price > 0)) return fail("Farklı fiyatlı iplik satırında hem iplik kodu hem fiyat olmalı."); }
+  if (new Set(prices.map(x => normCode(x.code))).size !== prices.length) return fail("Aynı iplik kodu iki kez yazılmış.");
+  if (!pricePerKg && !prices.length) { /* fiyat girilmeyebilir */ }
   err.style.display = "none";
 
   if (editingPfId) {
@@ -600,7 +657,7 @@ async function saveProforma() {
     if (!(await confirmSave("modalProforma"))) return;
     err.style.display = "none";
     const relabel = p.no !== no || (p.date || "") !== (date || "");
-    const patch = { no, date, incoterm, pricePerKg, planTon, note };
+    const patch = { no, date, incoterm, pricePerKg, prices, planTon, note };
     Object.assign(p, patch);
     const stampE = Date.now();
     const added = [];
@@ -635,7 +692,7 @@ async function saveProforma() {
 
   if (!(await confirmSave("modalProforma"))) return;
   const stamp = Date.now();
-  const pf = { id: "pf_" + stamp, supplier, no, date, incoterm, total, pricePerKg, planTon, note, isArchived: false, timestamp: stamp };
+  const pf = { id: "pf_" + stamp, supplier, no, date, incoterm, total, pricePerKg, prices, planTon, note, isArchived: false, timestamp: stamp };
   const list = [];
   for (let i = 1; i <= total; i++) list.push(blankContainer(pf, i, total, stamp));
 
@@ -883,7 +940,11 @@ function updateOrderTotal() {
   el.textContent = "Toplam: " + fmtTonRaw(tons) + " ton" + (cs ? " · " + cs.text : "");
   el.className = "total-line" + (cs ? " cap-" + cs.cls : "");
   $("orderTarget").textContent = "Hedef " + fmtTonRaw(plan) + " t · kapasite " + fmtTonRaw(CAPACITY.min) + " – " + fmtTonRaw(CAPACITY.max) + " t (en çok " + fmtTonRaw(CAPACITY.hard) + " t)";
-  if (pf && pf.pricePerKg && tons) $("orderTarget").textContent += " · tahmini " + fmtMoney(tons * 1000 * pf.pricePerKg);
+  if (pf && (pf.pricePerKg || specialPrices(pf).length) && tons) {
+    const items = [];
+    document.querySelectorAll("#orderItemsContainer .yarn-row").forEach(r => items.push({ code: r.querySelector(".order-code-input").value, kg: (parseFloat(r.querySelector(".order-ton-input").value) || 0) * 1000 }));
+    $("orderTarget").textContent += " · tahmini " + fmtMoney(costLines(pf, items, tons * 1000).total);
+  }
 }
 function loadedSum() {
   let s = 0;
@@ -920,8 +981,16 @@ function updateWeightCheck() {
 function calcNums() {
   const kg = parseFloat($("statusWeightKg").value) || 0;
   const c = findC($("statusCntId").value);
+  const pf = c ? findPf(c.pfId) : null;
+  const extra = parseFloat($("statusExtraCost").value) || 0, advance = parseFloat($("statusAdvance").value) || 0;
+  if (kg && specialPrices(pf).length) {
+    const items = [];
+    document.querySelectorAll("#loadedItemsContainer .yarn-row").forEach(r => items.push({ code: r.querySelector(".loaded-code-input").value, kg: parseFloat(r.querySelector(".loaded-kg-input").value) || 0 }));
+    const cl = costLines(pf, items, kg);
+    return { kg, unit: cl.total ? cl.total / kg : 0, extra, advance, calc: cl.total, lines: cl.lines, special: true };
+  }
   const unit = c ? unitOf(c) : 0;
-  return { kg, unit, extra: parseFloat($("statusExtraCost").value) || 0, advance: parseFloat($("statusAdvance").value) || 0, calc: kg && unit ? round2(kg * unit) : 0 };
+  return { kg, unit, extra, advance, calc: kg && unit ? round2(kg * unit) : 0 };
 }
 function updateCalc() {
   const n = calcNums();
@@ -929,7 +998,7 @@ function updateCalc() {
   const R = (l, v, cls) => '<div class="calc-row' + (cls ? " " + cls : "") + '"><span>' + esc(l) + "</span><b>" + esc(v) + "</b></div>";
   // bilgi satırları
   let info = "";
-  if (n.unit) info += R("Kilo fiyatı (proformadan)", fmtPriceVal(n.unit) + " $/kg");
+  if (n.unit) info += R(n.special ? "Ortalama kilo fiyatı" : "Kilo fiyatı (proformadan)", fmtPriceVal(n.unit) + " $/kg");
   else info += R("Kilo fiyatı", "proformada girilmemiş", "bad");
   const planKg = c ? orderKg(c) : 0;
   if (planKg && n.kg) {
@@ -948,7 +1017,8 @@ function updateCalc() {
   const pay = round2(rest + n.extra);
   // 1) Mal değeri
   h += '<div class="cb cb-firm"><div class="cb-h"><i>1</i> Mal değeri</div>' +
-    R(fmtNum(n.kg) + " kg × " + fmtPriceVal(n.unit) + " $", fmtMoney(n.calc), "sub") +
+    (n.special ? n.lines.map(l => R((l.code || "Diğer / kalemsiz") + ": " + fmtNum(l.kg) + " kg × " + fmtPriceVal(l.price) + " $", fmtMoney(l.amt))).join("") + R("Mal değeri toplamı", fmtMoney(n.calc), "sub")
+      : R(fmtNum(n.kg) + " kg × " + fmtPriceVal(n.unit) + " $", fmtMoney(n.calc), "sub")) +
     (n.advance ? R("Ön ödeme (düşülür)", "− " + fmtMoney(n.advance)) + R("Firmaya kalan", fmtMoney(rest), "sub" + (rest < 0 ? " bad" : "")) : "") + "</div>";
   // 2) Ek masraf
   h += '<div class="cb cb-extra"><div class="cb-h"><i>2</i> Ek masraf (sigorta, navlun...)</div>' +
@@ -1228,7 +1298,7 @@ function pfStats(pf, list) {
       const m = costOf(c);
       if (m) { s.money += m; s.extra += Number(c.extraCost) || 0; s.advance += advanceOf(c); s.costKg += bestKg(c); }
     }
-    if (st === "yellow" && pf && pf.pricePerKg) s.estMoney += orderKg(c) * pf.pricePerKg;
+    if (st === "yellow") s.estMoney += estOf(c);
     if (st === "blue") s.deliveredKg += bestKg(c);
   });
   return s;
@@ -1321,7 +1391,7 @@ function renderRow(c, archived) {
   if (loaded && costV) meta += '<div class="cost">' + esc(fmtMoney(costV)) + (unitOf(c) ? '<span class="unit"> · ' + esc(fmtPriceVal(unitOf(c))) + " $/kg</span>" : "") + "</div>";
   if (loaded && costV && advanceOf(c)) meta += '<div class="adv">Ön ödeme ' + esc(fmtMoney(advanceOf(c))) + " · <b>Kalan " + esc(fmtMoney(balanceOf(c))) + "</b></div>";
   const pfx = findPf(c.pfId);
-  if (st === "yellow" && pfx && pfx.pricePerKg && kg) meta += '<div class="est">≈ ' + esc(fmtMoney(kg * pfx.pricePerKg)) + " tahmini</div>";
+  if (st === "yellow" && kg && estOf(c)) meta += '<div class="est">≈ ' + esc(fmtMoney(estOf(c))) + " tahmini</div>";
 
   let actions = "";
   if (!archived) {
@@ -1374,6 +1444,7 @@ function renderPfCard(pf, opt) {
   let right = "";
   if (pf.pricePerKg) right += '<span class="pf-price">' + fmtPriceVal(pf.pricePerKg) + " $/kg</span>";
   else if (pf.price) right += '<span class="pf-price">' + esc(pf.price) + "</span>";
+  right += specialChips(pf);
   if (archived) {
     right += '<button class="btn btn-ghost btn-sm" data-action="restore" data-id="' + esc(pf.id) + '">' + ic("undo") + "Panoya al</button>" +
              '<button class="btn btn-ghost btn-sm" data-action="deleteProforma" data-id="' + esc(pf.id) + '">' + ic("trash") + "Kalıcı sil</button>";
@@ -1699,6 +1770,7 @@ function exportPdfReport() {
       const bar = '<div class="rp-pfbar"><b>' + esc(pf.no) + "</b>" + (pf.incoterm ? "<span>" + esc(pf.incoterm) + "</span>" : "") +
         (pf.date ? "<span>" + esc(fmtDate(pf.date)) + "</span>" : "") +
         (pf.pricePerKg ? "<span>" + fmtPriceVal(pf.pricePerKg) + " $/kg</span>" : "") +
+        specialPrices(pf).map(x => "<span>" + esc(x.code) + ": " + fmtPriceVal(Number(x.price)) + " $/kg</span>").join("") +
         '<span class="sp">' + list.length + " konteyner</span></div>";
       for (let r = 0; r < list.length; r += 5) {
         units.push((r === 0 ? (k === 0 ? head : "") + bar : "") + '<div class="rp-cards">' + list.slice(r, r + 5).map(card).join("") + "</div>");

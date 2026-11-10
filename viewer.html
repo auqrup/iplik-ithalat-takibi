@@ -255,8 +255,18 @@ const pfOrder = (a, b) => String(a.date || "9999-99-99").localeCompare(String(b.
 const orderKg = c => c.weightTon ? Math.round(c.weightTon * 1000) : 0;
 const bestKg = c => { const s = stageOf(c); return (s === "white" || s === "yellow") ? orderKg(c) : (c.weightKg || orderKg(c)); };
 const cartonsOf = c => (c.loadedItems || []).reduce((a, i) => a + (Number(i.cartons) || 0), 0);
-const unitOf = c => { const p = findPf(c.pfId); return (p && Number(p.pricePerKg)) || Number(c.unitPrice) || 0; };
-const costOf = c => { const kg = Number(c.weightKg) || 0, u = unitOf(c); return kg && u ? round2(kg * u) : parseMoney(c.totalCost); };
+const normCode = x => String(x || "").trim().toUpperCase().replace(/\s+/g, " ");
+const specialPrices = pf => ((pf && pf.prices) || []).filter(x => normCode(x.code) && Number(x.price) > 0);
+function priceFor(pf, code) { const k = normCode(code); const r = k && specialPrices(pf).find(x => normCode(x.code) === k); return r ? Number(r.price) : (pf ? Number(pf.pricePerKg) || 0 : 0); }
+function specialTotal(pf, items, totalKg) {
+  let used = 0, sum = 0;
+  (items || []).forEach(it => { const kg = Number(it.kg) || 0; if (kg <= 0) return; used += kg; sum += kg * priceFor(pf, it.code); });
+  if (totalKg - used > 0.5) sum += (totalKg - used) * (Number(pf.pricePerKg) || 0);
+  return round2(sum);
+}
+const unitOf = c => { const p = findPf(c.pfId), kg = Number(c.weightKg) || 0; if (kg && specialPrices(p).length) { const t = specialTotal(p, c.loadedItems, kg); if (t) return t / kg; } return (p && Number(p.pricePerKg)) || Number(c.unitPrice) || 0; };
+const costOf = c => { const p = findPf(c.pfId), kg = Number(c.weightKg) || 0; if (kg && specialPrices(p).length) { const t = specialTotal(p, c.loadedItems, kg); if (t) return t; } const u = unitOf(c); return kg && u ? round2(kg * u) : parseMoney(c.totalCost); };
+const specialSpans = pf => specialPrices(pf).map(x => "<span>" + esc(x.code) + ": " + fmtPrice(Number(x.price)) + " $/kg</span>").join("");
 const docLabel = c => { const d = c.docsStatus || "pending"; return d === "received" ? "Tamam" : d === "partial" ? "Eksik" : "Bekleniyor"; };
 
 /* ---------- Firebase: sadece dinle ---------- */
@@ -328,7 +338,7 @@ function cardHtml(c) {
 function pfBarHtml(pf, n) {
   return '<div class="pfbar"><b>' + esc(pf.no) + "</b>" + (pf.incoterm ? "<span>" + esc(pf.incoterm) + "</span>" : "") +
     (pf.date ? "<span>" + esc(fmtDate(pf.date)) + "</span>" : "") +
-    (pf.pricePerKg ? "<span>" + fmtPrice(pf.pricePerKg) + " $/kg</span>" : "") +
+    (pf.pricePerKg ? "<span>" + fmtPrice(pf.pricePerKg) + " $/kg</span>" : "") + specialSpans(pf) +
     (pf.planTon ? "<span>Plan: " + fmtTonRaw(pf.planTon) + " t / konteyner</span>" : "") +
     (pf.note ? '<span class="muted">' + esc(pf.note) + "</span>" : "") +
     (pf.isArchived ? '<span class="arc">Arşiv</span>' : "") +
@@ -446,7 +456,7 @@ function showPanel(id, pin) {
   const c = containers.find(x => x.id === id); if (!c) return;
   const pf = findPf(c.pfId) || {};
   const p = $("panel");
-  p.innerHTML = '<button class="px" data-close="1" aria-label="Kapat">×</button><div class="pfl"><b>' + esc(pf.no || "") + "</b>" + esc([pf.incoterm, fmtDate(pf.date), pf.pricePerKg ? fmtPrice(pf.pricePerKg) + " $/kg" : ""].filter(Boolean).join(" · ")) + (pf.note ? "<br>" + esc(pf.note) : "") + "</div>" + cardHtml(c) + (pin ? "" : '<div class="pin">Büyütmek için tıklayın</div>');
+  p.innerHTML = '<button class="px" data-close="1" aria-label="Kapat">×</button><div class="pfl"><b>' + esc(pf.no || "") + "</b>" + esc([pf.incoterm, fmtDate(pf.date), pf.pricePerKg ? fmtPrice(pf.pricePerKg) + " $/kg" : ""].concat(specialPrices(pf).map(x => x.code + ": " + fmtPrice(Number(x.price)) + " $/kg")).filter(Boolean).join(" · ")) + (pf.note ? "<br>" + esc(pf.note) : "") + "</div>" + cardHtml(c) + (pin ? "" : '<div class="pin">Büyütmek için tıklayın</div>');
   document.querySelectorAll(".sq.sel").forEach(e => e.classList.remove("sel"));
   const q = document.querySelector('.sq[data-cid="' + (window.CSS && CSS.escape ? CSS.escape(id) : id) + '"]'); if (q) q.classList.add("sel");
   const src = q || document.querySelector('[data-cid="' + (window.CSS && CSS.escape ? CSS.escape(id) : id) + '"]');

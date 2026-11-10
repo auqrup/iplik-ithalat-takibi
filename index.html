@@ -110,7 +110,13 @@
           <div class="f"><label for="pfTotal">Konteyner sayısı <span class="req">*</span></label><input type="number" id="pfTotal" value="3" min="1"></div>
           <div class="f"><label for="pfPlanTon">Konteyner başına plan (ton)</label><input type="number" step="0.1" id="pfPlanTon" value="22"></div>
         </div>
-        <div class="f"><label for="pfPriceKg">Fiyat ($ / kg)</label><input type="number" step="0.0001" id="pfPriceKg" inputmode="decimal" placeholder="Örn: 0.95"><span class="help">Kilo başına fiyat. Toplam tutar, yüklemeden sonra net kilodan hesaplanır.</span></div>
+        <div class="f"><label for="pfPriceKg">Genel fiyat ($ / kg)</label><input type="number" step="0.0001" id="pfPriceKg" inputmode="decimal" placeholder="Örn: 0.95"><span class="help">Kilo başına fiyat. Toplam tutar, yüklemeden sonra net kilodan hesaplanır.</span></div>
+        <div class="f pf-special">
+          <span class="flabel">Farklı fiyatlı iplikler <span class="opt">(isteğe bağlı)</span></span>
+          <span class="help" style="display:block;margin-bottom:6px;">Aynı proformada bazı iplikler başka fiyatlıysa buraya ekleyin. Burada yazmayan iplikler yukarıdaki genel fiyattan hesaplanır.</span>
+          <div id="pfPriceRows"></div>
+          <button class="btn btn-ghost btn-sm" type="button" onclick="addPriceRow('', '')">+ Farklı fiyat ekle</button>
+        </div>
         <p id="pfEstimate" class="est-line"></p>
         <div class="f"><label for="pfNote">Not</label><textarea id="pfNote" placeholder="Ödeme şartı, özel anlaşma, hatırlatma..."></textarea></div>
         <p id="pfError" class="formerr"></p>
