@@ -131,6 +131,8 @@ body { margin:0; background:var(--page); color:var(--ink); font-family:var(--fon
 .colh small { display:block; color:#aebdca; font-size:10.5px; margin-top:2px; }
 .colh .arc { background:#27465f; border-radius:8px; padding:0 6px; }
 .sq { width:92px; height:84px; background:var(--bg); border:1px solid var(--steel); border-left:9px solid var(--c); border-radius:3px; display:flex; align-items:center; justify-content:center; flex-direction:row; gap:5px; white-space:nowrap; cursor:pointer; font-family:var(--mono); font-weight:800; font-size:30px; line-height:1; padding:0; color:var(--ink); transition:transform .08s, box-shadow .08s; }
+.sq { position:relative; }
+.sq .sd { position:absolute; left:9px; right:0; bottom:4px; text-align:center; font-family:var(--mono); font-size:9px; font-weight:600; line-height:1; color:var(--ink-2); letter-spacing:0; }
 .sq small { font-size:17px; font-weight:600; color:var(--ink-2); margin-top:5px; }
 .sq:hover { transform:translateY(-2px); box-shadow:0 4px 12px rgba(18,40,58,.25); }
 .sq.sel { outline:3px solid var(--ink); outline-offset:1px; }
@@ -426,7 +428,7 @@ function render() {
   html += '<div class="board">' + pfs.map(pf => {
     const l = list.filter(c => c.pfId === pf.id).sort(byIndex);
     return '<div class="col"><div class="colh"><b>' + esc(pf.no) + "</b><small>" + esc(fmtDate(pf.date)) + "</small>" + (pf.isArchived ? '<small><span class="arc">Arşiv</span></small>' : "") + "</div>" +
-      l.map(c => { const ix = String(c.order || "").split("/"); return '<button class="sq s-' + stageOf(c) + '" data-cid="' + esc(c.id) + '" title="' + esc(STAGE[stageOf(c)].label) + '">' + esc((ix[0] || "").trim()) + "<small>/ " + esc((ix[1] || "").trim()) + "</small></button>"; }).join("") + "</div>";
+      l.map(c => { const ix = String(c.order || "").split("/"); const st = stageOf(c); const d = st === "yellow" ? c.orderDate : st === "blue" ? c.warehouseDate : (st === "green" || st === "red") ? c.arrivalDate : ""; return '<button class="sq s-' + st + '" data-cid="' + esc(c.id) + '" title="' + esc(STAGE[st].label) + '">' + esc((ix[0] || "").trim()) + "<small>/ " + esc((ix[1] || "").trim()) + "</small>" + (d ? '<span class="sd">' + esc(fmtDate(d)) + "</span>" : "") + "</button>"; }).join("") + "</div>";
   }).join("") + "</div>";
   $("view").innerHTML = html;
 }
